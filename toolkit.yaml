@@ -46,6 +46,22 @@ bundles:
   analysis:
     deps: [numpy>=2.3.5, tqdm>=4.67.0, pylhe>=1.0.2]
 
+  # ── SIDM two-Lepton-Jet analysis (CMS AN-23-107) ─────────────────
+  # Columnar reproduction of the SIDM analysis from LLPNanoAOD ROOT files:
+  # object selection + anti-kT Lepton-Jet clustering, event selection /
+  # cutflow, LJ-LJ (bound-state) mass, and gen-level signal kinematics.
+  # Reads with coffea NanoEvents; clusters with the fastjet+awkward
+  # ClusterSequence (with a pure-python anti-kT fallback).
+  sidm:
+    deps:
+      - coffea>=2024.11.0
+      - awkward>=2.8.0
+      - uproot>=5.3.0
+      - fastjet>=3.4.3.1
+      - vector>=1.6.3
+      - hist>=2.9.0
+      - numpy>=2.2.0
+
   # ── BSM / SUSY spectrum setup ────────────────────────────────────
   # Pure python (no external HEP software): parse benchmark-point spectra
   # and build Pythia decay-table fragments for BSM states the LHE leaves
@@ -172,6 +188,31 @@ tools:
     description: Build a Pythia-readable decay-table fragment to decay a BSM state the
       LHE left stable (e.g. GMSB neutralino -> photon + gravitino).
     bundle: bsm
+  - module: tools.analysis.sidm_inspect
+    name: SIDMInspectFileTool
+    description: Inspect an LLPNanoAOD ROOT file (trees, NanoAOD collections, branches)
+      and report which branches the SIDM pipeline needs but cannot find, with the
+      SIDMConfig override key for each. Run this first on any new file.
+    bundle: sidm
+  - module: tools.analysis.sidm_leptonjets
+    name: SIDMLeptonJetTool
+    description: Reconstruct SIDM Lepton Jets from LLPNanoAOD (CMS AN-23-107 Sec. 4) --
+      GED e / PF gamma / PF mu / DSA mu selection + cross-cleaning, anti-kT R=0.4
+      clustering (fastjet), eg/mu categorization, isolation and displacement cuts --
+      writing per-event leptonjets + trigger/PV/cosmic flags to JSONL.
+    bundle: sidm
+  - module: tools.analysis.sidm_selection
+    name: SIDMEventSelectionTool
+    description: Apply the SIDM event selection (trigger -> PV filter -> cosmic veto ->
+      two selected LJs), split into 4mu / 2mu2e channels, and reconstruct the LJ-LJ
+      invariant mass (chi-chibar bound-state mass) per channel with a cutflow.
+    bundle: sidm
+  - module: tools.analysis.sidm_gen
+    name: SIDMGenKinematicsTool
+    description: Reproduce the SIDM gen-level signal kinematics (AN-23-107 Sec. 3,
+      Figs 2-6) from LLPNanoAOD GenPart -- dark-photon pT/eta/dphi/Lxy, leading and
+      sub-leading lepton pT, and di-lepton Delta R.
+    bundle: sidm
   - module: tools.eda.compute_symbolic_amplitude_tool
     name: ComputeSymbolicAmplitude
     description: Generate FeynCalc code with symbolic masses and couplings.
