@@ -1,94 +1,103 @@
 ---
 name: sidm
-bundle: sidm
-description: Reproduce CMS AN-23-107 (Self-Interacting Dark Matter search with two Lepton Jets) results from an LLPNanoAOD ROOT file. Use whenever the user mentions SIDM, Lepton Jets (LJs), dark photons / Zd / "Dp", displaced or DSA muons, LLPNanoAOD, the BsTo2DpTo2Mu2e / BsTo2DpTo4Mu signal samples, the LJ-LJ or bound-state mass, or the SIDMInspectFileTool / SIDMLeptonJetTool / SIDMEventSelectionTool / SIDMGenKinematicsTool tools. Also use proactively before running any of these on a new file — always inspect first, and several selection choices (photon ID, PF-DSA cross-clean, primary-vertex cuts) are judgment calls that need surfacing.
+bundle: leptonjets
+description: Reproduce CMS AN-23-107 (Self-Interacting Dark Matter search with two Lepton Jets) from an LLPNanoAOD ROOT file, using the generic Lepton-Jet tools driven by configs/sidm.yaml. Use whenever the user mentions SIDM, Lepton Jets, dark photons / Zd / "Dp", displaced or DSA muons, LLPNanoAOD, the BsTo2DpTo2Mu2e / BsTo2DpTo4Mu signal samples, the LJ-LJ or bound-state mass, or the LeptonJetTool / EventSelectionTool / GenKinematicsTool / InspectFileTool tools applied to SIDM. This skill owns the SIDM-specific knowledge; the tools themselves are generic and carry no SIDM values.
 ---
 
-# SIDM two-Lepton-Jet analysis: from LLPNanoAOD to the bound-state peak
+# SIDM two-Lepton-Jet analysis (CMS AN-23-107)
 
-Reproduces the reconstruction, selection, and gen-level kinematics of the CMS
-SIDM search (AN-23-107) on **LLPNanoAOD** ROOT files, using coffea `NanoEvents`
-to read and the fastjet+awkward `ClusterSequence` to cluster. The signal is a
-χχ̄ bound state (`Bs`) → two dark photons (`Dp`, PDG id 32) → displaced,
-collimated lepton pairs reconstructed as Lepton Jets; the χχ̄ mass is the
-invariant mass of the two leading LJs.
+The Lepton-Jet tools are **generic and config-driven** — they carry no
+analysis-specific values. The entire SIDM analysis is expressed in a config,
+`configs/sidm.yaml`. To reproduce the note, pass that config to every tool:
+`config: configs/sidm.yaml`. To tweak a few cuts, pass `overrides: {...}` inline.
+
+The signal: a χχ̄ bound state (`Bs`) → two dark photons (`Dp`, **PDG id 32**) →
+displaced, collimated lepton pairs reconstructed as Lepton Jets; the χχ̄ mass is
+the invariant mass of the two leading LJs.
 
 ```
-file.root ──[SIDMInspectFileTool]──▶ readiness check (fix branch names here)
-          ──[SIDMLeptonJetTool]────▶ leptonjets JSONL (per-event LJs + flags)
-                                        └─[SIDMEventSelectionTool]─▶ cutflow + 4µ/2µ2e + LJ-LJ mass
-          ──[SIDMGenKinematicsTool]─▶ Figs 2-6 (dark-photon pT/η/Δφ/Lxy, dilepton ΔR)
+file.root ──[InspectFileTool config=configs/sidm.yaml]──▶ readiness/validation (fix branch names here)
+          ──[LeptonJetTool   config=configs/sidm.yaml]──▶ leptonjets JSONL (+ trigger/PV/cosmic + channel)
+                                                            └─[EventSelectionTool]─▶ cutflow + 4µ/2µ2e + LJ-LJ mass
+          ──[GenKinematicsTool config=configs/sidm.yaml]─▶ dark-photon pT/η/Δφ/Lxy, di-lepton ΔR (Figs 2–6)
 ```
 
-## Three rules that cover most first-run failures
+## Three rules
 
-### 1. Inspect first; keep the ROOT file under `base_directory`
+### 1. Inspect + validate the config first; keep the file under base_directory
+Run `InspectFileTool` with `config: configs/sidm.yaml` before anything else. Its
+`config_readiness` block validates the config against the file and lists any
+missing collection/branch with the **config path** to fix it. All tool paths are
+relative to `base_directory` (`tb config set heptapod base_directory <dir>`), so
+the `.root` and (if not given by absolute path) the config live under it.
 
-Always run `SIDMInspectFileTool` on a new file before anything else. It prints a
-`sidm_readiness` block — if `ready` is false, it lists each missing branch **and
-the config key to fix it**; pass those through `field_overrides` to the other
-tools. All tool paths are relative to `base_directory` (set via
-`tb config set heptapod base_directory <dir>`), so the `.root` must live there.
+### 2. Always pass the config; the tools do nothing SIDM-specific without it
+`LeptonJetTool`, `EventSelectionTool`, and `GenKinematicsTool` all take
+`config` (a YAML path or an inline dict) plus optional inline `overrides`
+(deep-merged last). Without a config they fall back to neutral defaults and
+reconstruct nothing meaningful. The chain is file-based: LeptonJetTool writes a
+`leptonjets` JSONL that EventSelectionTool consumes.
 
-### 2. The chain is file-based through JSONL — don't skip a stage
+### 3. Sanity-check against the filename
+The sample name encodes the truth. The LJ-LJ mass peak should sit at `MBs`, and
+the mean dark-photon Lxy should match the `ctau`↔lab mapping. A peak far from
+`MBs` usually means a dropped constituent (e.g. the ΔR(e,γ)<0.025 photon veto on
+an ultra-collimated pair) — not a tool bug.
 
-`SIDMLeptonJetTool` writes a `leptonjets` JSONL (one line per event, each LJ
-carrying its 4-vector, type, constituent counts, isolation, and a pass flag for
-every cut). `SIDMEventSelectionTool` **consumes that JSONL** to build the
-cutflow and the LJ-LJ mass. Run reconstruction, then selection on its output.
-`SIDMGenKinematicsTool` is independent (reads GenPart directly).
+## The SIDM values (all encoded in configs/sidm.yaml)
 
-### 3. Sanity-check results against the filename
+- **Constituents** (Table 12): GED electrons (pT>10, MVA v2 NoIso WPL), PF
+  photons (pT>20, modified-loose = VID bitmap dropping σιηιη + photon-iso), PF
+  muons (pT>5, loose), DSA muons (pT>10, displacedID>0). e–γ and PF–DSA overlaps
+  cross-cleaned.
+- **Lepton Jets**: anti-kT R=0.4; LJ pT>30, |η|<2.4; categories mu-type (≥1
+  muon, require N_µ≥2) / eγ-type; isolation IsoLJ<0.2; displacement (e lostHits≥1,
+  PF-µ trkNumPixelHits≤2).
+- **Event selection**: an ordered `event_selection.cutflow` — trigger (OR of the
+  four `HLT_DoubleL2Mu2{3,5}NoVtx_2Cha…` paths) → primary-vertex filter
+  (`Flag_goodVertices`) → cosmic veto → `object_count` ≥ 2 selected LJs. The
+  tools build the cutflow generically from this list, so a different analysis
+  adds/removes cuts here without code changes.
+- **Observables are config-defined and object-generic** (`observables:` list),
+  built by one engine over any object collection — `leptonjets`, or the stamped
+  constituents (`electron`/`photon`/`pfmuon`/`dsamuon`) and `jet`. SIDM's χχ̄
+  bound state is `ljlj_mass` = invariant mass of the 2 leading selected LJs
+  (per channel). Add any quantity in config alone — e.g. the invariant mass or
+  Delta R of the leading `pfmuon` and leading `jet` (see the commented examples
+  in `configs/sidm.yaml`). Functions: `invariant_mass`, `delta_r`, `delta_phi`,
+  `pt`, `eta`, `phi`, `mass`, `sum_pt`, `count`; `rank` is 1-based by pT.
+  Channels: 4µ=[mu,mu], 2µ2e=[eg,mu].
+- **Gen (optional)**: `resonance_pdgid: 32` gives the truth-level dark-photon
+  kinematics (Sec. 3 cross-check: pT/η/Δφ/Lxy, di-lepton ΔR grouped per dark
+  photon). Not required for the LJ-LJ mass; leave `gen` out if you don't want it.
 
-Sample names encode the truth (see decode table below): the LJ-LJ mass peak
-should sit at `MBs`, and the mean dark-photon Lxy should match the `ctau`↔lab
-mapping. If the peak is far from `MBs`, suspect a dropped constituent (e.g. the
-ΔR(e,γ)<0.025 photon veto on an ultra-collimated pair) or a wrong override —
-not a bug in the tool.
-
-## Decode the sample name before trusting a number
+## Decode the sample name
 
 `CutDecayFalse_SIDM_BsTo2DpTo{4Mu,2Mu2E}_MBs-<GeV>_MDp-<GeV>_ctau-<mm>_...root`
 
-| Token | Meaning | Use it to check |
-|-------|---------|-----------------|
-| `4Mu` / `2Mu2E` | final state → channel | expect yields in the 4µ or 2µ2e channel (not both) |
-| `MBs-<GeV>` | χχ̄ bound-state mass | the LJ-LJ mass peak should land here |
-| `MDp-<GeV>` | dark-photon mass | smaller ⇒ more collimated leptons (smaller di-lepton ΔR) |
-| `ctau-<mm>` | Zd proper decay length | maps to a lab Lxy (Table 5): 0.4 mm ↔ ~30 cm for these points |
+| Token | Meaning | Check |
+|-------|---------|-------|
+| `4Mu` / `2Mu2E` | final state → channel | yields land in that channel |
+| `MBs-<GeV>` | χχ̄ bound-state mass | the LJ-LJ mass peak |
+| `MDp-<GeV>` | dark-photon mass | smaller ⇒ more collimated leptons (smaller ΔR) |
+| `ctau-<mm>` | Zd proper decay length | lab Lxy (Table 5): 0.4 mm ↔ ~30 cm |
 
-## Override quick-reference (`field_overrides`, nested by section)
+## Overriding cuts (inline, no file edit)
 
-| Want to… | Override |
-|----------|----------|
-| change an LJ cut | `{"leptonjets": {"lj_pt_min": 40, "iso_max": 0.15, "jet_radius": 0.3}}` |
-| scan pT threshold / cone (Sec. 4.2.1) | loop `lj_pt_min` ∈ 30/40/50/60 or `jet_radius` ∈ 0.1–0.4 |
-| change an object threshold | `{"objects": {"pfmuon_pt_min": 3.0}}` |
-| different dark-photon id | `{"fields": {"dark_photon_pdgid": <id>}}` (default 32) |
-| fix a branch name from inspect | `{"fields": {"dsamuon_coll": "..."}}`, `{"objects": {"pfmuon_id_branch": "..."}}` |
-| stricter PF-DSA cleaning | `{"crossclean": {"method": "segment"}}` (default `"dr"`) |
-| built-in clustering (no fastjet) | `{"leptonjets": {"cluster_backend": "builtin"}}` |
+Pass `overrides` (deep-merged onto the config) for scans, e.g.
+`overrides: {leptonjet: {pt_min: 40}}` or `{leptonjet: {isolation: {max: 0.1}}}`
+or `{clustering: {radius: 0.3}}`. To change the dark-photon id:
+`overrides: {gen: {resonance_pdgid: <id>}}`. Fix a branch name the inspector
+flagged: `overrides: {constituents: [...]}` (or edit your own copy of the YAML).
 
-`max_events=N` on the reconstruction/gen tools caps events for quick iteration.
+## Writing a config for a different analysis
 
-## Common asks → what to run
+`configs/sidm.yaml` is the worked example — copy it. The schema (see
+`analysis_config.py`): `constituents` (each with an `id` recipe: bool / min /
+cutbased / photon_vid_relaxed), `crossclean`, `clustering`, `leptonjet`
+(categories + isolation + displacement), `event_selection` (triggers, pv,
+channels, observable), `gen` (resonance_pdgid). No code changes needed for a new
+lepton-jet-style search.
 
-- "Is this file ready?" → `SIDMInspectFileTool`.
-- "Reconstruct LJs and give me the cutflow / channel split" → `SIDMLeptonJetTool`
-  then `SIDMEventSelectionTool`.
-- "Plot the LJ-LJ / bound-state mass" → run the chain, then plot the saved
-  `*_ljlj_mass_{all,4mu,2mu2e}.npy`.
-- "pT-threshold / R scan" → loop the reconstruction with the override, compare
-  the mass distributions. See `references/recipes.md`.
-- "Dark-photon pT / Δφ / Lxy / di-lepton ΔR plots" → `SIDMGenKinematicsTool`.
-- "Compare mass points" → run the chain per file, overlay the mass arrays.
-
-Copy-paste recipes: `references/recipes.md`. Gotchas and their fixes:
-`references/pitfalls.md`. Full reference: `tools/analysis/README_SIDM.md`.
-
-## What this skill does NOT cover
-
-Background estimation (the data-driven method is WIP in the note), systematic
-uncertainties, MC scale-factor corrections (pileup / lepton / trigger), and the
-statistical interpretation / limit setting. This is reconstruction, selection,
-and kinematics — not the final limits.
+Recipes: `references/recipes.md`. Gotchas: `references/pitfalls.md`. Tool
+reference: `tools/analysis/README_leptonjets.md`.

@@ -1,0 +1,167 @@
+# SIDM two-Lepton-Jet analysis (CMS AN-23-107) — analysis config.
+#
+# This file holds ALL of the SIDM-specific policy. The tools themselves are
+# generic; point them at this file (config: configs/sidm.yaml) to reproduce the
+# analysis, or copy it as a starting point for a different search. Every value
+# below can also be overridden inline via a tool's `overrides` argument.
+#
+# Object selections follow Table 12 of the note; branch names match the CMS
+# SIDM LLPNanoAOD production.
+
+name: sidm
+tree: Events
+
+collections:
+  jet: Jet
+  genpart: GenPart
+
+# ---- constituent collections clustered into Lepton Jets (Sec. 4.1) ----
+constituents:
+  - name: electron            # GED electrons
+    collection: Electron
+    is_muon: false
+    mass: 0.000511
+    pt_min: 10.0
+    abseta_max: 2.4
+    id: {type: bool, field: mvaFall17V2noIso_WPL}   # MVA v2 NoIso WPL
+
+  - name: photon              # PF photons, modified-loose ID (drop sieie + phoIso)
+    collection: Photon
+    is_muon: false
+    mass: 0.0
+    pt_min: 20.0
+    abseta_max: 2.4
+    id:
+      type: photon_vid_relaxed
+      field: vidNestedWPBitmap
+      bits_per_cut: 2
+      required_cuts: [0, 1, 2, 4, 5]   # keep MinPt,SCEta,H/E,chIso,nhIso; drop sieie(3),phoIso(6)
+      min_level: 1
+      fallback_field: cutBased
+      fallback_min: 1
+    veto: {pixel_seed_field: pixelSeed}   # PixelSeedVeto
+
+  - name: pfmuon              # PF muons
+    collection: Muon
+    is_muon: true
+    mass: 0.105658
+    pt_min: 5.0
+    abseta_max: 2.4
+    id: {type: bool, field: looseId}
+
+  - name: dsamuon             # displaced standalone muons
+    collection: DSAMuon
+    is_muon: true
+    mass: 0.105658
+    pt_min: 10.0
+    abseta_max: 2.4
+    id: {type: min, field: displacedID, value: 0, strict: true}   # displacedID > 0
+
+# ---- overlap removal (Sec. 4.1.2 / 4.1.4) ----
+crossclean:
+  - name: photon_electron     # reject photons within dR<0.025 of a selected electron
+    target: photon
+    reference: electron
+    method: dr
+    max_dr: 0.025
+  - name: dsa_pf              # reject DSA muons overlapping a selected PF muon
+    target: dsamuon
+    reference: pfmuon
+    method: dr
+    max_dr: 0.1
+    use_outer: true
+    outer_eta_field: outerEta
+    outer_phi_field: outerPhi
+
+# ---- clustering (Sec. 4.2) ----
+clustering:
+  algorithm: antikt
+  radius: 0.4
+  backend: fastjet            # "builtin" for the pure-python reference
+
+# ---- Lepton-Jet selection (Sec. 4.2-4.4, Tables 10-12) ----
+leptonjet:
+  pt_min: 30.0
+  abseta_max: 2.4
+  isolation:
+    enabled: true
+    max: 0.2                  # IsoLJ = (E_MJ/E_LJ)(1 - f_lepton) < 0.2
+    matched_jet_dr: 0.4
+    jet_collection: Jet
+    lepton_fraction_branches: [chEmEF, neEmEF, muEF]
+  categories:                 # first match wins; else the default category
+    - {name: mu, min_muon: 1, final_min_muon: 2}   # mu-type: >=1 muon, require N_mu>=2
+    - {name: eg, default: true}                     # else eg-type
+  displacement:               # applied per category, only if the constituent is present
+    - {category: eg, constituent: electron, field: lostHits,        op: ">=", value: 1, reduce: min, applies_if_present: true}
+    - {category: mu, constituent: pfmuon,   field: trkNumPixelHits, op: "<=", value: 2, reduce: max, applies_if_present: true}
+
+# ---- event selection (Sec. 5) ----
+# The cutflow is an ordered list of named cuts; the tools build the cutflow
+# generically from it. An analysis without a PV filter or cosmic veto simply
+# omits those entries. Cut recipes: trigger | flag | primary_vertex |
+# cosmic_veto | event_scalar | object_count.
+event_selection:
+  cutflow:
+    - name: trigger                 # OR of the analysis trigger paths (Table 13)
+      type: trigger
+      paths:
+        - HLT_DoubleL2Mu23NoVtx_2Cha
+        - HLT_DoubleL2Mu23NoVtx_2Cha_CosmicSeed
+        - HLT_DoubleL2Mu25NoVtx_2Cha_Eta2p4
+        - HLT_DoubleL2Mu25NoVtx_2Cha_CosmicSeed_Eta2p4
+    - name: pv_filter               # primary-vertex filter (Table 15)
+      type: primary_vertex
+      flag: Flag_goodVertices        # use this Flag if present, else compute from PV_*
+      ndof_min: 4.0
+      absz_max: 24.0                 # cm (note prints "24 mm"; standard is cm)
+      rho_max: 2.0                   # cm
+      ndof: PV_ndof
+      z: PV_z
+      x: PV_x
+      y: PV_y
+    - name: cosmic_veto             # back-to-back muon veto (Sec. 5.2.2)
+      type: cosmic_veto
+      angle: 2.9
+    - name: two_leptonjets          # >= 2 selected Lepton Jets
+      type: object_count
+      selected: true
+      min: 2
+  channels:                         # split by the categories of the 2 leading LJs
+    - {name: "4mu",   categories: [mu, mu]}
+    - {name: "2mu2e", categories: [eg, mu]}
+  observable: {type: invariant_mass, n_leading: 2}   # (legacy hint; observables below are authoritative)
+
+# ---- derived quantities (computed for events passing the cutflow) ----
+# Each quantity is built by the generic engine over the event's object
+# collections: "leptonjets", or the stamped constituents (electron / photon /
+# pfmuon / dsamuon) and "jet". Functions: invariant_mass | delta_r | delta_phi |
+# pt | eta | phi | mass | sum_pt | count. rank is 1-based by descending pt.
+observables:
+  - name: ljlj_mass                 # LJ-LJ invariant mass = chi-chibar bound-state mass
+    function: invariant_mass
+    per_channel: true               # also split by channel (4mu / 2mu2e)
+    inputs:
+      - {object: leptonjets, selected: true, rank: 1}
+      - {object: leptonjets, selected: true, rank: 2}
+  - name: leading_muon_jet_mass     # invariant mass of the leading PF muon + leading jet
+    function: invariant_mass
+    inputs: [{object: pfmuon, rank: 1}, {object: jet, rank: 1}]
+  - name: leading_muon_jet_dR       # Delta R between the leading PF muon and leading jet
+    function: delta_r
+    inputs: [{object: pfmuon, rank: 1}, {object: jet, rank: 1}]
+  - name: leading_muon_pt           # transverse momentum of the leading PF muon
+    function: pt
+    inputs: [{object: pfmuon, rank: 1}]
+  - name: leading_lj_dphi           # absolute Delta phi between the two leading selected LJs
+    function: delta_phi
+    inputs:
+      - {object: leptonjets, selected: true, rank: 1}
+      - {object: leptonjets, selected: true, rank: 2}
+
+# ---- gen-level signal kinematics (Sec. 3) ----
+gen:
+  resonance_pdgid: 32          # the dark photon "Dp" / Z_D
+  lepton_pdgids: [11, 13]
+  mother_field: genPartIdxMother
+  vertex: {vx: vx, vy: vy}     # gen production vertex -> dark-photon Lxy
