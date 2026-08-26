@@ -7,11 +7,12 @@
 Config-driven gen-level resonance kinematics.
 
 Given a resonance PDG id and its lepton daughters (from the config's `gen`
-block), reconstruct, per resonance: pT, eta, transverse decay length Lxy (from
-the daughter production vertex), di-lepton Delta R, and leading/sub-leading
-lepton pT; plus the Delta-phi between the two resonances. For the SIDM config
-this is the dark-photon (Z_D) kinematics of AN-23-107 Sec. 3 (Figs 2-6). No
-analysis-specific values are hard-coded.
+block), reconstruct, per resonance: pT, eta, transverse decay length Lxy
+(production vertex -> decay vertex), di-lepton Delta R, and leading/sub-leading
+lepton pT; plus the Delta-phi between the two resonances. Lepton kinematics come
+from the daughters' last copies, so final-state radiation is already accounted
+for. For the SIDM config this is the dark-photon (Z_D) kinematics of AN-23-107
+Sec. 3 (Figs 2-6). No analysis-specific values are hard-coded.
 """
 from __future__ import annotations
 
@@ -29,15 +30,43 @@ from tools.analysis.leptonjets import _extract_collection
 
 def analyze_gen_event(gen: List[dict], cfg: dict) -> Dict[str, Any]:
     """Per-event resonance kinematics. `gen` is a list of GenPart dicts with
-    pdgId, pt, eta, phi, mass, status, mother_idx, vx, vy."""
+    pdgId, pt, eta, phi, mass, status, mother_idx, vx, vy.
+
+    The resonance's *direct* lepton daughters fix which resonances decayed
+    leptonically and where they decayed; their *last copies* (followed down the
+    same-pdgId chain to status 1) carry the kinematics, so a daughter that
+    radiated is measured after the radiation -- what a final-state analysis
+    sees. Lxy is the transverse distance from the resonance's own production
+    vertex to its decay vertex, falling back to the origin only when the
+    resonance carries no vertex of its own.
+    """
     res_id = get(cfg, "gen.resonance_pdgid")
     lep_ids = [abs(x) for x in get(cfg, "gen.lepton_pdgids", [11, 13])]
-    daughters: Dict[int, List[dict]] = {}
-    for g in gen:
+
+    children: Dict[int, List[int]] = {}
+    for j, g in enumerate(gen):
+        m = g.get("mother_idx")
+        if m is not None and m >= 0:
+            children.setdefault(m, []).append(j)
+
+    def last_copy(j: int) -> int:
+        """Walk the same-pdgId child chain down to the final-state particle."""
+        seen = {j}
+        while gen[j].get("status") != 1:
+            nxt = [k for k in children.get(j, [])
+                   if gen[k]["pdgId"] == gen[j]["pdgId"] and k not in seen]
+            if not nxt:
+                break
+            j = nxt[0]
+            seen.add(j)
+        return j
+
+    daughters: Dict[int, List[int]] = {}
+    for j, g in enumerate(gen):
         if abs(g["pdgId"]) in lep_ids:
             m = g.get("mother_idx")
             if m is not None and m >= 0:
-                daughters.setdefault(m, []).append(g)
+                daughters.setdefault(m, []).append(j)
     res_all = [i for i, g in enumerate(gen) if res_id is not None and abs(g["pdgId"]) == res_id]
     res_dec = [i for i in res_all if len(daughters.get(i, [])) >= 2]
     idx = sorted(res_dec if res_dec else res_all, key=lambda i: gen[i]["pt"], reverse=True)[:2]
@@ -45,10 +74,16 @@ def analyze_gen_event(gen: List[dict], cfg: dict) -> Dict[str, Any]:
     out = []
     for i in idx:
         g = gen[i]
-        leps = sorted(daughters.get(i, []), key=lambda d: d["pt"], reverse=True)
+        # the decay vertex is where the direct daughters are produced; the last
+        # copies may sit further downstream, so keep the two roles separate
+        direct = sorted(daughters.get(i, []), key=lambda j: gen[j]["pt"], reverse=True)
         lxy = None
-        if leps and leps[0].get("vx") is not None and leps[0].get("vy") is not None:
-            lxy = math.hypot(leps[0]["vx"], leps[0]["vy"])
+        if direct and gen[direct[0]].get("vx") is not None and gen[direct[0]].get("vy") is not None:
+            d0 = gen[direct[0]]
+            ox = g.get("vx") or 0.0
+            oy = g.get("vy") or 0.0
+            lxy = math.hypot(d0["vx"] - ox, d0["vy"] - oy)
+        leps = sorted((gen[last_copy(j)] for j in direct), key=lambda d: d["pt"], reverse=True)
         dR = delta_r(leps[0]["eta"], leps[0]["phi"], leps[1]["eta"], leps[1]["phi"]) if len(leps) >= 2 else None
         flavor = None
         if leps:
