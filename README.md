@@ -91,7 +91,13 @@ Each example ships a launcher that runs the whole setup above (sandbox, system p
 python examples/nda/launch.py --harness claude-code            # or codex, opencode
 python examples/eda/launch.py --harness codex
 python examples/sim/s1_lq_rr/launch.py --harness claude-code   # brings the MC run cards
+python examples/sidm/launch.py --harness claude-code           # NanoAOD analysis + LPC batch
 ```
+
+`examples/sidm` wires a coding agent to a NanoAOD sample with the `coffea`,
+`scaleout` and `cmssw` skills; point it at your own data with
+`SIDM_DATA_DIR=/eos/uscms/store/...`. Scaling over many files is covered by
+[`scripts/lpc_scaleout.py`](scripts/lpc_scaleout.py) (local or HTCondor).
 
 Each sandbox is its own toolbase project, so the bundles it activates don't touch your global config. See the per-example READMEs for what each covers.
 
@@ -155,6 +161,10 @@ Some bundles ship a **skill** — a written guide to using their tools well, cov
 |-------|--------|--------|
 | `feynrules` | Declaring mass and width once, tagging BSM couplings with an interaction order, checking the UFO before MG5 sees it | `feynrules` |
 | `mg5` | Shallow comma decay chains and the `NP=N` alternative, `compute_widths` ordering, reading past MG5's auto-conversion error mask | `mg5` |
+| `coffea` | Writing columnar analysis directly against coffea: the NanoEvents object model and attribute access, cutflows, weights, corrections, histograms | `coffea` |
+| `scaleout` | Running over many ROOT files at the LPC -- locally or fanned out over HTCondor with the coffea container from cvmfs | `coffea` |
+| `cmssw` | What CMSSW provides that coffea cannot -- EDM files, FWLite, custom NanoAOD production -- and where the boundary lies | `cmssw` |
+| `sidm` | The CMS SIDM two-Lepton-Jet analysis (AN-23-107) driven by `configs/sidm.yaml` | `leptonjets` |
 
 Each skill names a bundle, and `tb connect` surfaces it only when that bundle's tools are actually being served — so the `mg5` guide stays hidden until `mg5_path` is set, since without it the tools it describes aren't there either. `tb deactivate heptapod__mg5` turns one off; `tb activate` turns it back on.
 

@@ -9,7 +9,7 @@ Generic configuration for the columnar Lepton-Jet analysis tools.
 These tools carry NO analysis-specific policy of their own. Everything that
 defines a particular analysis -- which object collections are clustered, their
 selection cuts, the branch names, the categorization, the channels, the
-observable, the triggers, and the gen-level resonance -- lives in a **config**,
+triggers, and the gen-level resonance -- lives in a **config**,
 supplied either as a YAML file or an inline dict. The defaults here are neutral
 mechanism defaults (anti-kT R=0.4, the standard CMS good-vertex values, the
 NanoAOD isolation energy-fraction branches); they contain nothing specific to
@@ -21,8 +21,10 @@ as `configs/sidm.yaml` and is documented by the `sidm` skill.
 Config resolution (deep-merged, later wins):
     built-in DEFAULTS  <-  the YAML file / dict you pass  <-  inline `overrides`
 
-Nothing here imports coffea/awkward at module load; the schema builder imports
-coffea lazily.
+Nothing here imports coffea/awkward/vector at module load; the schema builder
+and the geometry helpers import them lazily. The geometry helpers do not
+implement kinematics themselves -- they delegate to scikit-hep `vector`, the
+same library coffea's LorentzVector behaviours call.
 """
 from __future__ import annotations
 
@@ -90,16 +92,7 @@ DEFAULTS: Dict[str, Any] = {
         # optional channel split by the categories of the leading N objects:
         # {name, categories: [catA, catB]}
         "channels": [],
-        "observable": {"type": "invariant_mass", "n_leading": 2},
     },
-
-    # Derived quantities computed for events passing the cutflow, over the
-    # event's object collections (leptonjets + stamped constituents/jets). Each:
-    #   {name, function, inputs:[{object, rank, [category], [selected]}], [per_channel]}
-    # function in: invariant_mass | delta_r | delta_phi | pt | eta | phi | mass |
-    # sum_pt | count. If empty, defaults to the invariant mass of the two leading
-    # selected leptonjets (the LJ-LJ / bound-state mass).
-    "observables": [],
 
     "gen": {
         "resonance_pdgid": None,
@@ -204,8 +197,11 @@ def apply_cutflow(data: Dict[str, Any], cutflow: List[Dict[str, Any]]) -> List[s
 
 
 # ===================================================================== #
-# ================= Generic derived-quantity engine ================== #
+# ============ Derived-quantity engine (legacy tools only) =========== #
 # ===================================================================== #
+# Only the retired EventSelectionTool uses this. Live analysis computes
+# derived quantities with coffea -- `(a + b).mass`, `a.delta_r(b)` -- on the
+# LeptonJet collection LeptonJetTool writes. See the `coffea` skill.
 # A quantity is computed from the leading-N members of named object
 # collections. Objects are plain dicts carrying pt/eta/phi/px/py/pz/E. The same
 # engine serves reconstructed objects (leptonjets, muons, jets) and gen objects,
@@ -299,31 +295,52 @@ def validate_config(cfg: Dict[str, Any]) -> List[str]:
             issues.append(f"event_selection.cutflow[{i}] missing 'name'")
         if c.get("type") not in valid_cut_types:
             issues.append(f"cutflow '{c.get('name')}' has unknown type '{c.get('type')}'; allowed: {list(valid_cut_types)}")
-    for i, q in enumerate(get(cfg, "observables", [])):
-        if not q.get("name"):
-            issues.append(f"observables[{i}] missing 'name'")
-        if q.get("function") not in _QUANTITY_FUNCTIONS:
-            issues.append(f"observable '{q.get('name')}' has unknown function '{q.get('function')}'; allowed: {list(_QUANTITY_FUNCTIONS)}")
     return issues
 
 
 # ===================================================================== #
-# ===================== Pure geometry helpers ======================== #
+# ==================== Geometry: coffea's functions =================== #
 # ===================================================================== #
+# Nothing here computes kinematics. These are the entry points the tools
+# call, and each one hands the work straight to the library function that
+# already exists.
+#
+# coffea's LorentzVector behaviour defines its kinematics by delegating to
+# scikit-hep `vector` -- in coffea.nanoevents.methods.vector,
+#     def delta_r(self, other):   return self.deltaR(other)
+#     def delta_phi(self, other): return self.deltaphi(other)
+# so `vector`'s deltaR/deltaphi ARE coffea's delta_r/delta_phi. Calling
+# `vector` gives the identical function on the plain dicts these tools
+# carry, without needing an awkward array at every call site.
+#
+# Where the tools already hold coffea NanoEvents arrays, call the coffea
+# methods on them directly (events.Muon.delta_r(events.Jet)) -- that is
+# always preferable to routing through here.
+
+
+def _vector():
+    """Import scikit-hep `vector` lazily (see the module docstring)."""
+    global _VECTOR
+    if _VECTOR is None:
+        import vector as _v
+        _VECTOR = _v
+    return _VECTOR
+
+
+_VECTOR = None
+
 
 def delta_phi(phi1: float, phi2: float) -> float:
-    d = phi1 - phi2
-    while d > math.pi:
-        d -= 2.0 * math.pi
-    while d <= -math.pi:
-        d += 2.0 * math.pi
-    return d
+    """coffea's delta_phi (== vector's deltaphi). Wraps to [-pi, pi)."""
+    v = _vector()
+    return float(v.obj(pt=1.0, phi=float(phi1)).deltaphi(v.obj(pt=1.0, phi=float(phi2))))
 
 
 def delta_r(eta1: float, phi1: float, eta2: float, phi2: float) -> float:
-    deta = eta1 - eta2
-    dphi = delta_phi(phi1, phi2)
-    return math.sqrt(deta * deta + dphi * dphi)
+    """coffea's delta_r (== vector's deltaR)."""
+    v = _vector()
+    return float(v.obj(pt=1.0, eta=float(eta1), phi=float(phi1))
+                 .deltaR(v.obj(pt=1.0, eta=float(eta2), phi=float(phi2))))
 
 
 # ===================================================================== #

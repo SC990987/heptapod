@@ -1,7 +1,7 @@
 ---
 name: sidm
 bundle: leptonjets
-description: Reproduce CMS AN-23-107 (Self-Interacting Dark Matter search with two Lepton Jets) from an LLPNanoAOD ROOT file, using the generic Lepton-Jet tools driven by configs/sidm.yaml. Use whenever the user mentions SIDM, Lepton Jets, dark photons / Zd / "Dp", displaced or DSA muons, LLPNanoAOD, the BsTo2DpTo2Mu2e / BsTo2DpTo4Mu signal samples, the LJ-LJ or bound-state mass, or the LeptonJetTool / EventSelectionTool / GenKinematicsTool / InspectFileTool tools applied to SIDM. This skill owns the SIDM-specific knowledge; the tools themselves are generic and carry no SIDM values.
+description: Reproduce CMS AN-23-107 (Self-Interacting Dark Matter search with two Lepton Jets) from an LLPNanoAOD ROOT file, using the generic Lepton-Jet tools driven by configs/sidm.yaml. Use whenever the user mentions SIDM, Lepton Jets, dark photons / Zd / "Dp", displaced or DSA muons, LLPNanoAOD, the BsTo2DpTo2Mu2e / BsTo2DpTo4Mu signal samples, the LJ-LJ or bound-state mass, or the LeptonJetTool / GenDecayLengthTool / InspectFileTool tools applied to SIDM. This skill owns the SIDM-specific knowledge; the tools themselves are generic and carry no SIDM values.
 ---
 
 # SIDM two-Lepton-Jet analysis (CMS AN-23-107)
@@ -16,11 +16,14 @@ displaced, collimated lepton pairs reconstructed as Lepton Jets; the χχ̄ mass
 the invariant mass of the two leading LJs.
 
 ```
-file.root ──[InspectFileTool config=configs/sidm.yaml]──▶ readiness/validation (fix branch names here)
-          ──[LeptonJetTool   config=configs/sidm.yaml]──▶ leptonjets JSONL (+ trigger/PV/cosmic + channel)
-                                                            └─[EventSelectionTool]─▶ cutflow + 4µ/2µ2e + LJ-LJ mass
-          ──[GenKinematicsTool config=configs/sidm.yaml]─▶ dark-photon pT/η/Δφ/Lxy, di-lepton ΔR (Figs 2–6)
+file.root ──[InspectFileTool    config=configs/sidm.yaml]──▶ readiness/validation (fix branch names here)
+          ──[LeptonJetTool      config=configs/sidm.yaml]──▶ <in>_leptonjets.root  →  events.LeptonJet
+          ──[GenDecayLengthTool resonance_pdgid=32       ]──▶ dark-photon Lxy
 ```
+
+Everything after reconstruction is **coffea**, not a tool: the cutflow, the
+LJ-LJ mass, the dark-photon pT/η/Δφ and the di-lepton ΔR. Load the `coffea`
+skill for how; `references/recipes.md` there has runnable versions of each.
 
 ## Three rules
 
@@ -32,11 +35,68 @@ relative to `base_directory` (`tb config set heptapod base_directory <dir>`), so
 the `.root` and (if not given by absolute path) the config live under it.
 
 ### 2. Always pass the config; the tools do nothing SIDM-specific without it
-`LeptonJetTool`, `EventSelectionTool`, and `GenKinematicsTool` all take
-`config` (a YAML path or an inline dict) plus optional inline `overrides`
-(deep-merged last). Without a config they fall back to neutral defaults and
-reconstruct nothing meaningful. The chain is file-based: LeptonJetTool writes a
-`leptonjets` JSONL that EventSelectionTool consumes.
+`LeptonJetTool` and `GenDecayLengthTool` take `config` (a YAML path or an inline
+dict) plus optional inline `overrides` (deep-merged last). Without a config they
+fall back to neutral defaults and reconstruct nothing meaningful.
+
+`LeptonJetTool` writes a **NanoAOD-style ROOT file**, so its output is an
+ordinary coffea collection rather than a dump to parse:
+
+```python
+from tools.analysis.analysis_config import build_schema, load_config
+from coffea.nanoevents import NanoEventsFactory
+import awkward as ak
+
+cfg    = load_config("configs/sidm.yaml")
+schema = build_schema(cfg, extra_mixins={"LeptonJet": "PtEtaPhiMLorentzVector"})
+ev     = NanoEventsFactory.from_root({"<in>_leptonjets.root": "Events"},
+                                     schemaclass=schema).events()
+
+sel  = ev.LeptonJet[ev.LeptonJet.selected]        # LJ fields: pt eta phi mass iso
+two  = sel[ak.num(sel) >= 2]                      #   categoryId nMuon nConstituents
+mass = (two[:, 0] + two[:, 1]).mass               # the LJ-LJ (bound-state) mass
+```
+
+`extra_mixins` is what gives `LeptonJet` its Lorentz-vector behaviour; without
+it there is no `.mass` and no `delta_r`. The per-event trigger / PV / cosmic
+decisions arrive under `ev.Flag`, as in central NanoAOD. The channel arrives
+twice: as `ev.Channel["4mu"] / ev.Channel["2mu2e"]` booleans (self-describing --
+prefer these) and as a compact `ev.channelId` int whose legend is in the tool's
+JSON under `channel_ids`.
+
+The cutflow is coffea's `PackedSelection`, not a tool:
+
+```python
+from coffea.analysis_tools import PackedSelection
+s = PackedSelection()
+s.add("trigger",        ak.to_numpy(ev.Flag.trigger))
+s.add("pv_filter",      ak.to_numpy(ev.Flag.pv_filter))
+s.add("cosmic_veto",    ak.to_numpy(ev.Flag.cosmic_veto))
+s.add("two_leptonjets", ak.to_numpy(ak.num(sel)) >= 2)
+cf = s.cutflow("trigger", "pv_filter", "cosmic_veto", "two_leptonjets").result()
+```
+
+On 400 events of the signal sample this gives
+`(400, 220, 220, 210, 61)`.
+
+### 3. Gen-level quantities: Lxy is a tool, the rest is coffea
+**Lxy is a tool** because it is a convention, not an expression:
+`GenDecayLengthTool` measures the dark photon's *production* vertex to its
+*decay* vertex (its daughters' vertex). `hypot(dp.vx, dp.vy)` is the production
+point's distance from the origin — a different quantity, ~800x smaller, and it
+looks entirely plausible.
+
+**pT, η, Δφ and the di-lepton ΔR are coffea.** Two traps when pairing gen
+daughters, both silent; the `coffea` skill's "Gen-level resonance daughters,
+paired correctly" recipe handles both:
+
+* pair by the ancestor index, never by position — `lep[:, 0]`/`lep[:, 1]` mixes
+  daughters of the two dark photons and silently halves your statistics;
+* use **last copies** (`statusFlags` bit 13) — 22% of these leptons radiate,
+  and skipping it collapses `dR_ee` onto `dR_mm`.
+
+Done right this gives 1000 pairs from 500 events, `dR_ee = 0.003966`,
+`dR_mm = 0.001575`.
 
 ### 3. Sanity-check against the filename
 The sample name encodes the truth. The LJ-LJ mass peak should sit at `MBs`, and

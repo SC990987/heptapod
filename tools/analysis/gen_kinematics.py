@@ -18,13 +18,14 @@ from __future__ import annotations
 
 import json
 import os
-import math
 from typing import Dict, List, Optional, Any
 
 from orchestral.tools.base.tool import BaseTool
 from orchestral.tools.base.field_utils import RuntimeField, StateField
 
-from tools.analysis.analysis_config import load_config, get, delta_phi, delta_r, build_schema
+from tools.analysis.analysis_config import (
+    load_config, get, delta_phi, delta_r, build_schema,
+)
 from tools.analysis.leptonjets import _extract_collection
 
 
@@ -82,7 +83,10 @@ def analyze_gen_event(gen: List[dict], cfg: dict) -> Dict[str, Any]:
             d0 = gen[direct[0]]
             ox = g.get("vx") or 0.0
             oy = g.get("vy") or 0.0
-            lxy = math.hypot(d0["vx"] - ox, d0["vy"] - oy)
+            import vector
+            # Lxy is the transverse magnitude of the displacement -- vector's
+            # own `rho` for a 2D vector, not an arithmetic of ours.
+            lxy = float(vector.obj(x=d0["vx"] - ox, y=d0["vy"] - oy).rho)
         leps = sorted((gen[last_copy(j)] for j in direct), key=lambda d: d["pt"], reverse=True)
         dR = delta_r(leps[0]["eta"], leps[0]["phi"], leps[1]["eta"], leps[1]["phi"]) if len(leps) >= 2 else None
         flavor = None
@@ -109,7 +113,7 @@ class GenKinematicsTool(BaseTool):
     overrides: Optional[dict] = RuntimeField(default=None, description="Inline config overrides")
     tree_name: Optional[str] = RuntimeField(default=None, description="TTree name (default: config 'tree' or 'Events')")
     max_events: Optional[int] = RuntimeField(default=None, description="Process at most this many events")
-    output_prefix: Optional[str] = RuntimeField(default=None, description="Prefix for saved arrays/histograms")
+    output_prefix: Optional[str] = RuntimeField(default=None, description="Optional prefix to also dump raw .npy arrays; omit to get histograms and stats in the JSON only")
     hist_bins: int = RuntimeField(default=50, description="Number of histogram bins")
 
     base_directory: str = StateField(default=".", description="Base directory for safe paths")
@@ -202,24 +206,29 @@ class GenKinematicsTool(BaseTool):
             warns.append("gen-vertex fields absent; Lxy not computed")
 
         import numpy as np
-        prefix = self.output_prefix
-        if prefix is None:
-            base = os.path.splitext(os.path.basename(self.root_path))[0]
-            d = os.path.dirname(self.root_path)
-            prefix = os.path.join(d, f"{base}_genkin") if d else f"{base}_genkin"
-        abs_prefix = prefix if os.path.isabs(prefix) else os.path.join(self.base_directory, prefix)
-        if os.path.dirname(abs_prefix):
-            os.makedirs(os.path.dirname(abs_prefix), exist_ok=True)
+        # Histograms and stats come back in the JSON. Raw .npy arrays are written
+        # ONLY when the caller asks with `output_prefix` -- the analysis works on
+        # the NanoAOD file, not on array dumps, so writing them by default just
+        # litters the sandbox.
+        abs_prefix = None
+        if self.output_prefix:
+            abs_prefix = (self.output_prefix if os.path.isabs(self.output_prefix)
+                          else os.path.join(self.base_directory, self.output_prefix))
+            if os.path.dirname(abs_prefix):
+                os.makedirs(os.path.dirname(abs_prefix), exist_ok=True)
 
         histograms, data_paths, stats = {}, {}, {}
         for key, vals in acc.items():
             if vals:
-                counts, edges = np.histogram(np.asarray(vals, float), bins=self.hist_bins)
+                arr = np.asarray(vals, float)
+                counts, edges = np.histogram(arr, bins=self.hist_bins)
                 histograms[key] = {"bins": edges.tolist(), "counts": counts.tolist()}
-                p = f"{abs_prefix}_{key}.npy"
-                np.save(p, np.asarray(vals, float))
-                data_paths[key] = os.path.relpath(p, self.base_directory)
-                stats[key] = {"n": len(vals), "mean": float(np.mean(vals))}
+                stats[key] = {"n": len(vals), "mean": float(arr.mean()),
+                              "min": float(arr.min()), "max": float(arr.max())}
+                if abs_prefix:
+                    p = f"{abs_prefix}_{key}.npy"
+                    np.save(p, arr)
+                    data_paths[key] = os.path.relpath(p, self.base_directory)
             else:
                 stats[key] = {"n": 0, "mean": None}
         return json.dumps({

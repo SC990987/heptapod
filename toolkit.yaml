@@ -63,6 +63,47 @@ bundles:
       - vector>=1.6.3
       - hist>=2.9.0
       - numpy>=2.2.0
+      # analysis_config.load_config reads the YAML analysis config, and
+      # coffea.nanoevents itself imports yaml at module load -- without this
+      # the whole bundle fails on `import coffea.nanoevents`.
+      - pyyaml>=6.0
+
+  # ── coffea analysis environment ──────────────────────────────────
+  # This bundle ships no tools of its own -- it provides the environment and
+  # the `coffea` skill, which teaches the agent to write columnar analysis
+  # code directly against coffea: the NanoEvents object model and attribute
+  # access, PackedSelection cutflows, Weights and systematics, LumiMask,
+  # correctionlib scale factors, and hist. coffea already implements the
+  # physics; wrapping each of its functions in a tool would only add a
+  # narrower interface to maintain.
+  coffea:
+    deps:
+      - coffea>=2024.11.0
+      - awkward>=2.8.0
+      - uproot>=5.3.0
+      - vector>=1.6.3
+      - hist>=2.9.0
+      - numpy>=2.2.0
+      - correctionlib>=2.6.0
+      - pyyaml>=6.0
+
+  # ── legacy array tools (not activated by default) ────────────────
+  # Tools that operate on .npy / .jsonl dumps of particle arrays. They predate
+  # reading NanoAOD columnar with coffea, and each one is a coffea one-liner
+  # over data that has been flattened to disk and back. Kept so existing
+  # workflows and tests keep working; NOT activated by default, so an agent
+  # reaches for the coffea expression instead. Turn them on deliberately with
+  # `tb activate heptapod/legacy`.
+  legacy:
+    deps: [numpy>=2.3.5, tqdm>=4.67.0, pylhe>=1.0.2]
+
+  # ── CMSSW ────────────────────────────────────────────────────────
+  # Ships no tools and no pip dependencies: CMSSW is external software
+  # entered with `cmsenv`, not a Python package. The bundle exists to carry
+  # the `cmssw` skill, which tells the agent how to use the framework
+  # directly -- EDM file inspection, FWLite, cmsRun/cmsDriver, custom
+  # NanoAOD production -- and where the boundary with coffea lies.
+  cmssw: {}
 
   # ── BSM / SUSY spectrum setup ────────────────────────────────────
   # Pure python (no external HEP software): parse benchmark-point spectra
@@ -105,11 +146,11 @@ tools:
   - module: tools.analysis.conversions
     name: EventJSONLToNumpyTool
     description: Convert a JSONL event dataset into a zero-padded NumPy array.
-    bundle: analysis
+    bundle: legacy
   - module: tools.analysis.conversions
     name: JetsJSONLToNumpyTool
     description: Convert a JSONL jets dataset into a zero-padded NumPy array.
-    bundle: analysis
+    bundle: legacy
   - module: tools.analysis.conversions
     name: LHEToJSONLTool
     description: Convert a MadGraph LHE file into the JSONL (evtjsonl-1.0)
@@ -118,56 +159,56 @@ tools:
   - module: tools.analysis.kinematics
     name: ApplyCutsTool
     description: Apply kinematic cuts to particles from numpy array or JSONL.
-    bundle: analysis
+    bundle: legacy
   - module: tools.analysis.kinematics
     name: CalculateDeltaRTool
     description: Calculate Delta R between particles.
-    bundle: analysis
+    bundle: legacy
   - module: tools.analysis.kinematics
     name: CalculateInvariantMassTool
     description: Calculate the invariant mass of a system of particles.
-    bundle: analysis
+    bundle: legacy
   - module: tools.analysis.kinematics
     name: CalculateTransverseMomentumTool
     description: Calculate transverse momentum (pT) for particles.
-    bundle: analysis
+    bundle: legacy
   - module: tools.analysis.kinematics
     name: FilterByDeltaRTool
     description: Remove objects from event arrays based on Delta R proximity to
       other objects.
-    bundle: analysis
+    bundle: legacy
   - module: tools.analysis.kinematics
     name: FilterByPDGIDTool
     description: Filter particles by PDG ID from JSONL files.
-    bundle: analysis
+    bundle: legacy
   - module: tools.analysis.kinematics
     name: GetHardestNJetsTool
     description: Extract the N hardest (highest pT) jets from jet clustering
       output.
-    bundle: analysis
+    bundle: legacy
   - module: tools.analysis.kinematics
     name: GetHardestNTool
     description: Extract the N hardest (highest pT) particles from events.
-    bundle: analysis
+    bundle: legacy
   - module: tools.analysis.kinematics
     name: MergeObjectCollectionsTool
     description: Merge multiple object collections (particles, jets) into a
       single unified JSONL file.
-    bundle: analysis
+    bundle: legacy
   - module: tools.analysis.kinematics
     name: SortByPtTool
     description: Sort particles by transverse momentum (pT) in descending order.
-    bundle: analysis
+    bundle: legacy
   - module: tools.analysis.reconstruction
     name: ResonanceReconstructionTool
     description: Template-based resonance reconstruction tool for combining
       pre-selected particle arrays.
-    bundle: analysis
+    bundle: legacy
   - module: tools.analysis.cutflow
     name: CutflowTool
     description: Read-only cutflow / selection-sanity diagnostic over a JSONL event
       dataset (per-object multiplicity, per-cut survival, first cut that zeros the sample).
-    bundle: analysis
+    bundle: legacy
   - module: tools.analysis.normalization
     name: NormalizeYieldTool
     description: Normalize raw MC counts to an expected yield via sigma x lumi / n_generated
@@ -208,13 +249,21 @@ tools:
     description: Apply the config-driven event selection (trigger -> PV filter -> cosmic
       veto -> >= min selected LJs), split into channels, and reconstruct the invariant
       mass of the N leading selected Lepton Jets per channel with a cutflow.
+    bundle: legacy
+  - module: tools.analysis.gen_decay_length
+    name: GenDecayLengthTool
+    description: Transverse decay length Lxy of a long-lived resonance, read straight
+      from a (LLP)NanoAOD file. Lxy is measured production-vertex-to-decay-vertex
+      (the resonance's own vx,vy to its daughters' vx,vy) -- taking the resonance's
+      vertex alone measures the production point instead and is off by orders of
+      magnitude on a displaced signal. Returns the histogram and statistics.
     bundle: leptonjets
   - module: tools.analysis.gen_kinematics
     name: GenKinematicsTool
     description: Reproduce gen-level resonance kinematics from (LLP)NanoAOD GenPart --
       resonance pT/eta/dphi/Lxy, leading and sub-leading lepton pT, and di-lepton Delta R
       -- for the resonance PDG id set in the config (e.g. the dark photon for SIDM).
-    bundle: leptonjets
+    bundle: legacy
   - module: tools.eda.compute_symbolic_amplitude_tool
     name: ComputeSymbolicAmplitude
     description: Generate FeynCalc code with symbolic masses and couplings.

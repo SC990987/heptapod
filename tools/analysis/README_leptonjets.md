@@ -15,8 +15,13 @@ A worked config for the CMS SIDM search (AN-23-107) ships as
 |------|--------|---------|
 | `InspectFileTool` | `nanoaod_inspect.py` | List trees/collections/branches and **validate a config against the file** (missing collections/branches + the config path to fix each). Run first. |
 | `LeptonJetTool` | `leptonjets.py` | Config-driven object selection + cross-cleaning → anti-kT clustering → categorization → isolation & displacement → per-event `leptonjets` JSONL + trigger/PV/cosmic flags + channel. |
-| `EventSelectionTool` | `event_selection.py` | Applies the config's **ordered `cutflow`** (whatever named cuts you list), splits into channels, and computes the invariant mass of the N leading selected LJs per channel. |
-| `GenKinematicsTool` | `gen_kinematics.py` | Gen-level resonance kinematics (pT/η/Δφ/Lxy, di-lepton ΔR) for the config's `gen.resonance_pdgid`. |
+| `GenDecayLengthTool` | `gen_decay_length.py` | Transverse decay length Lxy of the config's `gen.resonance_pdgid`, measured production-vertex-to-decay-vertex. |
+
+Everything downstream of reconstruction — the cutflow, the LJ-LJ mass, gen
+pT/η/Δφ and the di-lepton ΔR — is coffea rather than a tool; `LeptonJetTool`
+writes a NanoAOD-style file so its output is `events.LeptonJet`. See the
+`coffea` and `sidm` skills. The former `EventSelectionTool` and
+`GenKinematicsTool` live in the `legacy` bundle (`tb activate heptapod/legacy`).
 
 Every tool takes `config` (YAML path relative to `base_directory`, or an inline
 dict) and optional inline `overrides` (deep-merged last). The old `SIDM*` class
@@ -27,11 +32,11 @@ names remain as aliases.
 ```python
 import json
 from tools.analysis.leptonjets import LeptonJetTool
-from tools.analysis.event_selection import EventSelectionTool
+from coffea.analysis_tools import PackedSelection
 
 BASE = "/path/to/workspace"; CFG = "configs/sidm.yaml"; ROOT = "signal.root"
 LeptonJetTool(base_directory=BASE, root_path=ROOT, config=CFG, output_path="lj.jsonl").run()
-print(json.loads(EventSelectionTool(base_directory=BASE, leptonjets_jsonl="lj.jsonl", config=CFG).run())["mass_stats"])
+# cutflow + LJ-LJ mass: see the sidm skill's recipes (PackedSelection + (a+b).mass)
 ```
 
 ## Config schema (see `analysis_config.py`)

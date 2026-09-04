@@ -130,36 +130,6 @@ event_selection:
   channels:                         # split by the categories of the 2 leading LJs
     - {name: "4mu",   categories: [mu, mu]}
     - {name: "2mu2e", categories: [eg, mu]}
-  observable: {type: invariant_mass, n_leading: 2}   # (legacy hint; observables below are authoritative)
-
-# ---- derived quantities (computed for events passing the cutflow) ----
-# Each quantity is built by the generic engine over the event's object
-# collections: "leptonjets", or the stamped constituents (electron / photon /
-# pfmuon / dsamuon) and "jet". Functions: invariant_mass | delta_r | delta_phi |
-# pt | eta | phi | mass | sum_pt | count. rank is 1-based by descending pt.
-observables:
-  - name: ljlj_mass                 # LJ-LJ invariant mass = chi-chibar bound-state mass
-    function: invariant_mass
-    per_channel: true               # also split by channel (4mu / 2mu2e)
-    inputs:
-      - {object: leptonjets, selected: true, rank: 1}
-      - {object: leptonjets, selected: true, rank: 2}
-  - name: leading_muon_jet_mass     # invariant mass of the leading PF muon + leading jet
-    function: invariant_mass
-    inputs: [{object: pfmuon, rank: 1}, {object: jet, rank: 1}]
-  - name: leading_muon_jet_dR       # Delta R between the leading PF muon and leading jet
-    function: delta_r
-    inputs: [{object: pfmuon, rank: 1}, {object: jet, rank: 1}]
-  - name: leading_muon_pt           # transverse momentum of the leading PF muon
-    function: pt
-    inputs: [{object: pfmuon, rank: 1}]
-  - name: leading_lj_dphi           # absolute Delta phi between the two leading selected LJs
-    function: delta_phi
-    inputs:
-      - {object: leptonjets, selected: true, rank: 1}
-      - {object: leptonjets, selected: true, rank: 2}
-
-# ---- gen-level signal kinematics (Sec. 3) ----
 gen:
   resonance_pdgid: 32          # the dark photon "Dp" / Z_D
   lepton_pdgids: [11, 13]

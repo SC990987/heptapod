@@ -14,6 +14,7 @@ instead of being built in Python.
 """
 
 import argparse
+import glob
 import os
 import shutil
 import subprocess
@@ -46,8 +47,104 @@ def _run(argv, cwd):
     return r
 
 
+def _resolve_harness_command(command):
+    """Find the harness executable, PATH or not.
+
+    Claude Code installed as the VS Code extension never puts `claude` on
+    PATH -- the binary lives inside the extension directory, whose name
+    carries a version that changes on every update. Fall back to the newest
+    one rather than making the user maintain a PATH entry that goes stale.
+    """
+    found = shutil.which(command)
+    if found:
+        return found
+    # Both Claude Code and Codex ship inside VS Code extensions whose directory
+    # names carry a version that changes on update; prefer the newest.
+    patterns = {
+        'claude': ['~/.vscode-server/extensions/anthropic.claude-code-*'
+                   '/resources/native-binary/claude',
+                   '~/.claude/local/claude'],
+        'codex':  ['~/.vscode-server/extensions/openai.chatgpt-*'
+                   '/bin/linux-x86_64/codex',
+                   '~/.vscode-server/extensions/openai.chatgpt-*/bin/*/codex'],
+    }
+    candidates = []
+    for pat in patterns.get(command, []):
+        candidates += sorted(glob.glob(os.path.expanduser(pat)))
+    for cand in reversed(candidates):
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return None
+
+
+def _codex_startup_timeout(sandbox: Path, seconds: int = 180) -> None:
+    """Give the MCP server long enough to start.
+
+    Codex defaults to a 30 s MCP startup budget. Serving this toolkit means
+    importing coffea/awkward/uproot/fastjet, which on a shared filesystem is
+    dominated by I/O -- ~15 s warm and considerably more cold -- so the default
+    fails with "MCP client for `toolbase` timed out after 30 seconds".
+    """
+    cfg = sandbox / '.codex' / 'config.toml'
+    if not cfg.exists():
+        return
+    text = cfg.read_text()
+    if 'startup_timeout_sec' in text:
+        return
+    lines, out, done = text.splitlines(), [], False
+    for line in lines:
+        out.append(line)
+        if not done and line.strip() == '[mcp_servers.toolbase]':
+            out.append(f'startup_timeout_sec = {seconds}')
+            done = True
+    if not done:                      # no section found; append one
+        out += ['', '[mcp_servers.toolbase]', f'startup_timeout_sec = {seconds}']
+    cfg.write_text("\n".join(out) + "\n")
+    print(f'  set startup_timeout_sec = {seconds} for codex')
+
+
+def _warm_import_cache(tb: str) -> None:
+    """Touch the toolkit's interpreter so the first agent call is not the one
+    paying the cold-import cost."""
+    meta = sorted(Path.home().glob('.toolbase/cache/*/*/.install_meta.yaml'))
+    for m in meta:
+        for line in m.read_text().splitlines():
+            if line.startswith('python_path:'):
+                py = line.split(':', 1)[1].strip()
+                if os.path.exists(py):
+                    subprocess.run([py, '-c', 'import coffea, awkward, uproot'],
+                                   capture_output=True, timeout=300)
+                    print('  warmed the import cache')
+                return
+
+
+def _require_installed(tb: str) -> None:
+    """Fail early, and usefully, if the toolkit is not installed.
+
+    Without this the launcher builds a sandbox, writes the prompt, and only
+    then dies inside `tb activate` with "'heptapod' is not installed" --
+    leaving a half-made sandbox behind and no hint about what to do.
+    """
+    r = subprocess.run([tb, 'list'], capture_output=True, text=True)
+    if 'heptapod' in (r.stdout + r.stderr):
+        return
+    sys.exit(
+        "heptapod is not installed for toolbase.\n\n"
+        "Install it from the repository root (the directory holding "
+        "toolkit.yaml):\n\n"
+        "    cd <heptapod checkout>\n"
+        "    source env.sh                     # if you use one\n"
+        "    tb install -e . --bundle analysis --bundle leptonjets \\\n"
+        "                    --bundle coffea --bundle cmssw --bundle pdg \\\n"
+        "                    --bundle units --bundle inspire\n\n"
+        "Then check with `tb list`. If `tb list` says nothing is installed but "
+        "~/.toolbase/cache/heptapod exists, the slot is a partial install: "
+        "remove it with `rm -rf ~/.toolbase/cache/heptapod` and install again."
+    )
+
+
 def main(*, example, bundles, prompt_path, sandbox_dir, mode='explorer',
-         config_keys=()):
+         config_keys=(), post_setup=None):
     """Create a sandbox, wire a harness to HEPTAPOD's tools, and launch it.
 
     Args:
@@ -62,6 +159,11 @@ def main(*, example, bundles, prompt_path, sandbox_dir, mode='explorer',
             'mg5_path'), read from the repo's config.py. Bundles gated on a
             key stay hidden until it is set, so this is what makes eda / mg5 /
             feynrules tools show up.
+        post_setup: optional callable(sandbox: Path) run after the bundles and
+            config are set but before the harness is wired. Use it to stage
+            inputs the example needs inside the sandbox -- tools sandbox all
+            file access to base_directory, so data living elsewhere has to be
+            linked in rather than referenced by absolute path.
     """
     ap = argparse.ArgumentParser(description=f'Launch a coding agent on the {example} tools.')
     ap.add_argument('--harness', required=True, choices=sorted(HARNESSES),
@@ -74,6 +176,7 @@ def main(*, example, bundles, prompt_path, sandbox_dir, mode='explorer',
 
     harness = HARNESSES[args.harness]
     tb = _toolbase()
+    _require_installed(tb)
 
     from sandbox_utils import create_new_sandbox
     sandbox = Path(create_new_sandbox(Path(sandbox_dir), mode=args.mode)).resolve()
@@ -82,13 +185,19 @@ def main(*, example, bundles, prompt_path, sandbox_dir, mode='explorer',
     (sandbox / harness['instructions']).write_text(Path(prompt).read_text())
     print(f"  wrote {harness['instructions']} from {Path(prompt).name}")
 
+    # Claim the sandbox as its own toolbase project BEFORE activating.
+    # `tb activate` walks up the tree for the nearest `.toolbase/`; the repo
+    # root ships one (for its profiles), so without this the loadout lands at
+    # the repo root instead of here -- the sandbox gets no config, and every
+    # example run mutates the checkout.
+    (sandbox / '.toolbase').mkdir(exist_ok=True)
+
     for b in bundles:
         _run([tb, 'activate', f'heptapod/{b}'], cwd=sandbox)
     print(f"  activated: {', '.join(bundles)}")
 
     # The system prompts name tools bare (EnumerateDiagrams), but toolbase
     # namespaces them as heptapod__* by default.
-    # .toolbase/ already exists: tb activate created it above.
     (sandbox / '.toolbase' / 'serve.yaml').write_text('default:\n  bare: true\n')
     print('  wrote .toolbase/serve.yaml (bare tool names)')
 
@@ -102,17 +211,30 @@ def main(*, example, bundles, prompt_path, sandbox_dir, mode='explorer',
             _run([tb, 'config', 'set', 'heptapod', key, str(value)], cwd=sandbox)
             print(f"  set {key} = {value}")
 
+    if post_setup is not None:
+        post_setup(sandbox)
+
     _run([tb, 'connect', args.harness], cwd=sandbox)
     print(f"  wired {args.harness}")
+
+    if args.harness == 'codex':
+        _codex_startup_timeout(sandbox)
+    _warm_import_cache(tb)
 
     if args.no_launch:
         print(f"\nSandbox ready: {sandbox}\nStart the agent with: cd {sandbox} && {harness['command']}")
         return
 
-    cmd = shutil.which(harness['command'])
+    cmd = _resolve_harness_command(harness['command'])
     if not cmd:
-        sys.exit(f"\nSandbox ready at {sandbox}, but '{harness['command']}' is not on PATH. "
-                 f"Install it, then run: cd {sandbox} && {harness['command']}")
+        sys.exit(
+            f"\nSandbox ready at {sandbox}\n\n"
+            f"...but '{harness['command']}' was not found on PATH or in the usual\n"
+            f"install locations. Two ways to use the sandbox anyway:\n\n"
+            f"  * open it as a folder in your editor:\n      {sandbox}\n\n"
+            f"  * or put the executable on PATH and re-run this launcher.")
+    if not shutil.which(harness['command']):
+        print(f"  '{harness['command']}' is not on PATH; using {cmd}")
 
     print(f"\nLaunching {harness['command']} in {sandbox.name} ...")
     os.chdir(sandbox)

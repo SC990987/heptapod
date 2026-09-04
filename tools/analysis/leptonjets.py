@@ -27,7 +27,7 @@ from orchestral.tools.base.tool import BaseTool
 from orchestral.tools.base.field_utils import RuntimeField, StateField
 
 from tools.analysis.analysis_config import (
-    load_config, get, delta_phi, delta_r, build_schema, apply_cutflow,
+    load_config, get, delta_phi, delta_r, build_schema, apply_cutflow, MUON_MASS,
 )
 
 _OPS = {">": lambda a, b: a > b, ">=": lambda a, b: a >= b,
@@ -341,16 +341,13 @@ def _cosmic_veto(muons: List[dict], angle: float) -> bool:
     angle > `angle`). `muons` are objects (pt/eta/phi) from is_muon constituents."""
     if len(muons) < 2:
         return True
-    dirs = []
-    for m in muons:
-        p = make_p4(m["pt"], m["eta"], m["phi"], 0.1056)
-        mag = math.sqrt(p["px"] ** 2 + p["py"] ** 2 + p["pz"] ** 2)
-        if mag > 0:
-            dirs.append((p["px"] / mag, p["py"] / mag, p["pz"] / mag))
+    import vector
+    # a zero-momentum muon has no direction to compare
+    dirs = [vector.obj(pt=m["pt"], eta=m["eta"], phi=m["phi"], mass=MUON_MASS)
+            for m in muons if m["pt"] > 0]
     for i in range(len(dirs)):
         for j in range(i + 1, len(dirs)):
-            cos = max(-1.0, min(1.0, sum(dirs[i][k] * dirs[j][k] for k in range(3))))
-            if math.acos(cos) > angle:
+            if dirs[i].deltaangle(dirs[j]) > angle:   # vector's 3D opening angle
                 return False
     return True
 
@@ -398,7 +395,9 @@ def compute_event_flags(cutflow: List[dict], scalars: dict, i: int, muons: List[
                     flags[name] = True
                 else:
                     x = scalars.get(c.get("x")); y = scalars.get(c.get("y"))
-                    rho = math.hypot((x[i] if x else 0.0) or 0.0, (y[i] if y else 0.0) or 0.0)
+                    import vector
+                    rho = vector.obj(x=(x[i] if x else 0.0) or 0.0,
+                                     y=(y[i] if y else 0.0) or 0.0).rho
                     flags[name] = (ndof[i] > c.get("ndof_min", 4.0) and abs(z[i]) < c.get("absz_max", 24.0)
                                    and rho < c.get("rho_max", 2.0))
         elif t == "cosmic_veto":
@@ -559,6 +558,110 @@ def _idx(lst, i): return lst[i] if lst is not None else None
 # =========================== The tool =============================== #
 # ===================================================================== #
 
+
+# ===================================================================== #
+# ============ LeptonJet collection as a coffea-readable file ========= #
+# ===================================================================== #
+
+# Fields written per Lepton Jet. Names follow NanoAOD convention
+# (`LeptonJet_pt`, ...) so coffea's schema groups them into `events.LeptonJet`.
+LJ_FLOAT_FIELDS = ("pt", "eta", "phi", "mass", "iso")
+LJ_INT_FIELDS = ("nMuon", "nConstituents", "categoryId")
+LJ_BOOL_FIELDS = ("selected", "passKin", "passMult", "passIso", "passDisplacement")
+
+_LJ_SRC = {"nMuon": "n_muon", "nConstituents": "n_constituents",
+           "passKin": "pass_kin", "passMult": "pass_mult",
+           "passIso": "pass_iso", "passDisplacement": "pass_displacement"}
+
+
+def _fastjet_fallback_reason(exc: Exception) -> str:
+    """Explain why fastjet could not be used, actionably.
+
+    The usual cause on an LPC-style setup is a CMSSW environment leaking into
+    the shell: `cmsenv` puts /cvmfs/.../libfastjet*.so on LD_LIBRARY_PATH, which
+    shadows the libfastjet that the pip `fastjet` wheel ships, and its SWIG
+    extension then fails to resolve a symbol. The built-in anti-kT that takes
+    over agrees with fastjet to ~1e-9 (see test_antikt_agrees_with_fastjet_
+    backend), so results stay correct -- but it is much slower.
+    """
+    msg = str(exc)
+    if "undefined symbol" in msg and "fastjet" in msg.lower():
+        cmssw = [p for p in os.environ.get("LD_LIBRARY_PATH", "").split(":")
+                 if "/cvmfs/" in p or "CMSSW" in p]
+        if cmssw:
+            return ("fastjet shadowed by a CMSSW environment on LD_LIBRARY_PATH "
+                    f"({cmssw[0]}); used the built-in anti-kT instead (same "
+                    "numbers, slower). Run this from a shell where `cmsenv` has "
+                    "NOT been sourced.")
+        return ("fastjet's SWIG extension failed to load (undefined symbol) -- a "
+                "libfastjet ABI mismatch; used the built-in anti-kT instead "
+                "(same numbers, slower).")
+    return (f"fastjet unavailable ({type(exc).__name__}: {msg[:120]}); used the "
+            "built-in anti-kT instead (same numbers, slower)")
+
+
+def write_leptonjet_root(path, per_event, categories, channels, event_ids, cut_names):
+    """Write the reconstructed Lepton Jets as a NanoAOD-style ROOT file.
+
+    Read it back with coffea and the collection behaves like any other:
+
+        from tools.analysis.analysis_config import build_schema
+        schema = build_schema(cfg, extra_mixins={"LeptonJet": "PtEtaPhiMLorentzVector"})
+        events = NanoEventsFactory.from_root({path: "Events"}, schemaclass=schema).events()
+        events.LeptonJet.pt
+        (events.LeptonJet[:, 0] + events.LeptonJet[:, 1]).mass
+        events.LeptonJet.delta_r(events.LeptonJet)
+
+    Categories and channels are strings, which do not fit in a flat branch, so
+    they are written as integer ids; the legends come back in the tool's JSON.
+    """
+    import awkward as ak
+    import numpy as np
+    import uproot
+
+    cat_id = {c: i for i, c in enumerate(categories)}
+    chan_id = {c: i for i, c in enumerate(channels)}
+    counts = np.array([len(e["leptonjets"]) for e in per_event], dtype=np.int64)
+
+    def jag(name, cast):
+        src = _LJ_SRC.get(name, name)
+        flat = [lj.get(src) for e in per_event for lj in e["leptonjets"]]
+        if name == "categoryId":
+            flat = [cat_id.get(lj.get("category"), -1)
+                    for e in per_event for lj in e["leptonjets"]]
+        flat = [(cast(0) if v is None else cast(v)) for v in flat]
+        return ak.unflatten(np.array(flat, dtype=cast), counts)
+
+    data = {"nLeptonJet": counts.astype(np.uint32)}
+    for f in LJ_FLOAT_FIELDS:
+        data[f"LeptonJet_{f}"] = jag(f, np.float64)
+    for f in LJ_INT_FIELDS:
+        data[f"LeptonJet_{f}"] = jag(f, np.int32)
+    for f in LJ_BOOL_FIELDS:
+        data[f"LeptonJet_{f}"] = jag(f, bool)
+
+    # per-event: the cutflow flags, the channel, and ids for joining back
+    for name in cut_names:
+        data[f"Flag_{name}"] = np.array(
+            [bool(e["event"]["flags"].get(name, True)) for e in per_event], dtype=bool)
+    # channelId keeps the compact form; the per-channel booleans make the file
+    # self-describing -- coffea groups `Channel_*` into `events.Channel`, so
+    # `events.Channel["4mu"]` works without carrying an id->name legend around.
+    data["channelId"] = np.array(
+        [chan_id.get(e["event"]["channel"], -1) for e in per_event], dtype=np.int32)
+    for name in channels:
+        data[f"Channel_{name}"] = np.array(
+            [e["event"]["channel"] == name for e in per_event], dtype=bool)
+    for key in ("run", "luminosityBlock", "event"):
+        if event_ids.get(key) is not None:
+            data[key] = np.asarray(event_ids[key])
+
+    with uproot.recreate(path) as fh:
+        fh["Events"] = data
+    return {"n_events": int(counts.size), "n_leptonjets": int(counts.sum()),
+            "category_ids": cat_id, "channel_ids": chan_id}
+
+
 class LeptonJetTool(BaseTool):
     """
     Reconstruct Lepton Jets from a (LLP)NanoAOD ROOT file, driven entirely by a
@@ -576,7 +679,8 @@ class LeptonJetTool(BaseTool):
     root_path: str = RuntimeField(description="Sandbox-relative path to the (LLP)NanoAOD .root file")
     config: Optional[Any] = RuntimeField(default=None, description="Analysis config: a YAML path (relative to base_directory) or an inline dict. Defines constituents, cuts, categories, channels, triggers, etc.")
     overrides: Optional[dict] = RuntimeField(default=None, description="Inline config overrides merged last (deep-merged onto the config).")
-    output_path: Optional[str] = RuntimeField(default=None, description="Sandbox-relative output JSONL path (default: <input>_leptonjets.jsonl)")
+    output_path: Optional[str] = RuntimeField(default=None, description="Sandbox-relative output path (default: <input>_leptonjets.root)")
+    output_format: str = RuntimeField(default="root", description="'root' writes a NanoAOD-style LeptonJet collection coffea can open; 'jsonl' the legacy per-event records")
     tree_name: Optional[str] = RuntimeField(default=None, description="TTree name (default: config 'tree' or 'Events')")
     max_events: Optional[int] = RuntimeField(default=None, description="Process at most this many events")
 
@@ -639,6 +743,10 @@ class LeptonJetTool(BaseTool):
         if os.path.dirname(dst):
             os.makedirs(os.path.dirname(dst), exist_ok=True)
 
+        if self.output_format not in ("root", "jsonl"):
+            return self.format_error(
+                error="Invalid Output Format", reason=f"output_format={self.output_format!r}",
+                suggestion="Use 'root' (a coffea-readable LeptonJet collection) or 'jsonl'")
         n = len(records); all_warns = set(warns)
         # Phase 1: constituents
         consts_all, selcounts_all = [], []
@@ -652,7 +760,7 @@ class LeptonJetTool(BaseTool):
             try:
                 jets_all = cluster_fastjet_batch(consts_all, R)
             except Exception as e:
-                all_warns.add(f"fastjet unavailable ({type(e).__name__}); used built-in anti-kT")
+                all_warns.add(_fastjet_fallback_reason(e))
         if jets_all is None:
             jets_all = [antikt_cluster(c, R) for c in consts_all]
         # Phase 3: finalize + evaluate the config cutflow + write JSONL
@@ -660,38 +768,74 @@ class LeptonJetTool(BaseTool):
         cut_names = [c.get("name") for c in cutflow]
         cutflow_counts = {name: 0 for name in cut_names}
         n_fullpass = 0; chan_counts = {}
-        with open(dst, "w") as fh:
-            for i in range(n):
-                reco = finalize_leptonjets(consts_all[i], jets_all[i], records[i]["pfjets"], selcounts_all[i], cfg)
-                all_warns.update(reco["warnings"])
-                muons = _muon_dirs(records[i], cfg)
-                ev_flags = compute_event_flags(cutflow, flags_scalars, i, muons)
-                sel = [lj for lj in reco["leptonjets"] if lj["selected"]]
-                channel = classify_channel(sel, cfg)
-                data = {"leptonjets": reco["leptonjets"],
-                        "objects": _stamp_objects(consts_all[i], records[i]["pfjets"]),
-                        "event": {"flags": ev_flags, "channel": channel, "counts": reco["counts"]}}
-                passed = apply_cutflow(data, cutflow)
-                for name in passed:
-                    cutflow_counts[name] += 1
-                if len(passed) == len(cutflow):
-                    n_fullpass += 1
-                    if channel:
-                        chan_counts[channel] = chan_counts.get(channel, 0) + 1
-                fh.write(json.dumps({"event_id": i, "schema_version": "evtjsonl-1.0", "data": data},
-                                    separators=(",", ":"), ensure_ascii=False) + "\n")
-        return json.dumps({
+        per_event = []
+        for i in range(n):
+            reco = finalize_leptonjets(consts_all[i], jets_all[i], records[i]["pfjets"], selcounts_all[i], cfg)
+            all_warns.update(reco["warnings"])
+            muons = _muon_dirs(records[i], cfg)
+            ev_flags = compute_event_flags(cutflow, flags_scalars, i, muons)
+            sel = [lj for lj in reco["leptonjets"] if lj["selected"]]
+            channel = classify_channel(sel, cfg)
+            data = {"leptonjets": reco["leptonjets"],
+                    "objects": _stamp_objects(consts_all[i], records[i]["pfjets"]),
+                    "event": {"flags": ev_flags, "channel": channel, "counts": reco["counts"]}}
+            passed = apply_cutflow(data, cutflow)
+            for name in passed:
+                cutflow_counts[name] += 1
+            if len(passed) == len(cutflow):
+                n_fullpass += 1
+                if channel:
+                    chan_counts[channel] = chan_counts.get(channel, 0) + 1
+            per_event.append(data)
+
+        result = {
             "status": "ok", "config": cfg.get("name", "generic"), "root_path": self.root_path,
-            "output_jsonl": out_rel, "n_events": n,
+            "n_events": n,
             "cutflow": [{"cut": "initial", "passed": n}]
                        + [{"cut": nm, "passed": cutflow_counts[nm]} for nm in cut_names],
             "passed_all": n_fullpass, "channels": chan_counts, "warnings": sorted(all_warns),
-        }, separators=(",", ":"), ensure_ascii=False)
+        }
+
+        if self.output_format == "jsonl":
+            with open(dst, "w") as fh:
+                for i, data in enumerate(per_event):
+                    fh.write(json.dumps({"event_id": i, "schema_version": "evtjsonl-1.0",
+                                         "data": data},
+                                        separators=(",", ":"), ensure_ascii=False) + "\n")
+            result["output_jsonl"] = out_rel
+        else:
+            cats = [c.get("name") for c in get(cfg, "leptonjet.categories", []) if c.get("name")]
+            for d in per_event:
+                for lj in d["leptonjets"]:
+                    if lj.get("category") and lj["category"] not in cats:
+                        cats.append(lj["category"])
+            chans = [c.get("name") for c in get(cfg, "event_selection.channels", []) if c.get("name")]
+            ids = {}
+            for key in ("run", "luminosityBlock", "event"):
+                try:
+                    import awkward as ak
+                    ids[key] = ak.to_numpy(events[key]) if key in events.fields else None
+                except Exception:                                # noqa: BLE001
+                    ids[key] = None
+            try:
+                info = write_leptonjet_root(dst, per_event, cats, chans, ids, cut_names)
+            except Exception as e:                               # noqa: BLE001
+                return self.format_error(error="Write Failed", reason=str(e),
+                                         suggestion="uproot is required to write the LeptonJet ROOT file")
+            result["output_root"] = out_rel
+            result["n_leptonjets"] = info["n_leptonjets"]
+            result["category_ids"] = info["category_ids"]
+            result["channel_ids"] = info["channel_ids"]
+            result["read_back"] = (
+                "build_schema(cfg, extra_mixins={'LeptonJet': 'PtEtaPhiMLorentzVector'}) "
+                "then NanoEventsFactory.from_root({path: 'Events'}) -> events.LeptonJet")
+        return json.dumps(result, separators=(",", ":"), ensure_ascii=False)
 
     def _default_output(self):
         base = os.path.splitext(os.path.basename(self.root_path))[0]
         d = os.path.dirname(self.root_path)
-        name = f"{base}_leptonjets.jsonl"
+        ext = "jsonl" if getattr(self, "output_format", "root") == "jsonl" else "root"
+        name = f"{base}_leptonjets.{ext}"
         return os.path.join(d, name) if d else name
 
 
