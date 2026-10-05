@@ -3,7 +3,7 @@
 # **HEPTAPOD**
 
 <p align="left">
-  <img src="logo/heptapod-light.svg" alt="HEPTAPOD logo" width="150">
+  <img src="logo/heptapod-dark.svg" alt="HEPTAPOD logo" width="150">
 </p>
 
 ## Overview
