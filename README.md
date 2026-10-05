@@ -2,8 +2,8 @@
 
 # **HEPTAPOD**
 
-<p align="left">
-  <img src="logo/heptapod-dark.svg" alt="HEPTAPOD logo" width="150">
+<p align="center">
+  <img src="logo/heptapod.svg" alt="HEPTAPOD" width="150">
 </p>
 
 ## Overview
