@@ -1,10 +1,10 @@
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0) [![Python](https://img.shields.io/badge/Python-3.12%20|%203.13-blue.svg)](https://www.python.org/downloads/) [![Served via](https://img.shields.io/badge/Served%20via-toolbase-orange.svg)](https://github.com/alexr314/toolbase)
+
 # **HEPTAPOD**
 
----
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Python](https://img.shields.io/badge/Python-3.12%20|%203.13-blue.svg)](https://www.python.org/downloads/)
-[![Framework](https://img.shields.io/badge/Framework-Orchestral--AI-green.svg)](https://orchestral-ai.com)
-[![Served via](https://img.shields.io/badge/Served%20via-toolbase-orange.svg)](https://github.com/alexr314/toolbase)
+<p align="left">
+  <img src="logo/heptapod-light.svg" alt="HEPTAPOD logo" width="150">
+</p>
 
 ## Overview
 
