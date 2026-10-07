@@ -22,6 +22,13 @@ only to change how *every* analysis built this way behaves.
 `PKG/__init__.py` holds `BASE_DIR` (where the package is, for finding `configs/` and
 `data/`) and `TREE_NAME` (the tree the events are read from).
 
+`.analysis_framework.json`, next to the package, records what the framework was
+scaffolded from (the objects and their collections, the tree, the trigger paths, the
+sample names) and the components added since, with their options. The tools read it
+for defaults and to update a component; edits made by hand to the definitions and
+configs do not update it, and nothing depends on its list of objects or samples
+being current.
+
 ## The analysis: `PKG/definitions/`
 
 | File | Holds | Shape |
@@ -97,7 +104,8 @@ cannot be run.
      an empty list of the object;
    - derived objects in definition order, each ordered by pT if it is jagged with a
      `pt`, each followed by its own object cuts;
-   - `object_weight`;
+   - `object_weight`, which multiplies the channel's event weights from here on: the
+     cutflow, its first row included, and the histograms;
    - event cuts in the order the selection lists them, each seeing only the events
      that passed the ones before;
    - histograms and counters, with the events that are left. Each axis of a
@@ -144,8 +152,13 @@ out[sample] = {
 }
 ```
 
-The first cutflow row, `"None"`, is the count before any event cut. Object cuts do not
-appear in the cutflow: one that was skipped leaves a warning and nothing else.
+The first cutflow row, `"None"`, is the count before any event cut. Object cuts have
+no row in the cutflow: their effect is in the object counts (`counters`, the
+`<object>_n` histograms) and in the rows of the event cuts that count the object, and
+one that was skipped leaves a warning and nothing else.
+Counters are not chosen by a config: every entry of `counter_defs` is filled in every
+channel, as a plain (unweighted, unscaled) number over the events that pass the
+channel's event cuts.
 `"not_applied"` counts the chunks in which an event cut was skipped; such a row
 repeats the counts of the row before it. `unavailable_objects` are the objects that
 could not be built in at least one chunk.
@@ -155,6 +168,11 @@ could not be built in at least one chunk.
 Things in the output must add up across chunks: numbers add, sets take the union,
 histograms and cutflows add. Strings, lists and `None` do not merge sensibly, which is
 why per-sample facts are kept in sets.
+
+`CheckAnalysisFramework` returns a summary of this, not the output itself: cutflow
+rows as `[cut, events, weighted events]`, the counters, and the names of the
+histograms that stayed empty. It does not return histogram contents. Its fields are
+listed at the top of `pitfalls.md`.
 
 ## Strict and lenient
 

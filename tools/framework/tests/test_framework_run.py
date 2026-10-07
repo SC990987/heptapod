@@ -188,7 +188,15 @@ def test_static_check_passes_on_a_fresh_project():
     assert inventory["channels"] == ["all", "baseline", "baseline_2muons"]
     assert "dsaMuons" in inventory["primary_objects"] and inventory["samples"]["Signal"]["n_files"] == 1
     assert inventory["optional_objects"] == ["gens"]
+    assert inventory["run_periods"] == {"2018": {"lumi": LUMI, "golden_json": None}}
     assert _module(handle, "__init__").TREE_NAME == "Events"
+    # what each channel applies, with the yaml anchors and merges resolved
+    selections = inventory["selections"]
+    assert selections["all"] == {"obj_cuts": {}, "evt_cuts": []}
+    assert selections["baseline"]["evt_cuts"] == ["pass triggers", "PV filter"]
+    assert selections["baseline_2muons"]["evt_cuts"] == ["pass triggers", "PV filter", ">=2 muons"]
+    assert selections["baseline"]["obj_cuts"]["muons"] == ["pT > 10 GeV", "|eta| < 2.4"]
+    assert inventory["unused"]["hists"] == []           # every histogram is in a collection
 
 
 def test_processor_counts_what_the_file_contains():
@@ -512,6 +520,68 @@ def test_the_checker_reports_config_mistakes_instead_of_crashing():
         assert written["ok"] is False and any("listy" in e for e in written["static"]["errors"])
     finally:
         selections.write_text(original, encoding="utf8")
+
+
+def test_the_check_shows_what_an_edit_did():
+    """What an agent (or a person) needs to see after editing definitions and configs."""
+    handle = _project("edits")
+    check = _module(handle, "tools.check")
+    _append(handle, "definitions/hists.py", '''
+
+# the third muon of an event: only events with a soft extra muon have one
+hist_defs["third_muon_pt"] = h.Histogram(
+    [h.Axis(hist.axis.Regular(10, 0, 10, name="third_muon_pt"),
+            lambda objs, mask: objs["muons"][mask, 2].pt)],
+    evt_mask=lambda objs: ak.num(objs["muons"], axis=1) > 2)
+hist_defs["forgotten"] = obj_attr("muons", "phi")
+''')
+    _append(handle, "configs/selections.yaml", '''
+hard_muons:
+  obj_cuts:
+    <<: *object_cuts
+    muons:
+      - "pT > 30 GeV"
+  evt_cuts:
+    - *event_cuts
+''')
+    _append(handle, "configs/hist_collections.yaml", '\nextra:\n  - "third_muon_pt"\n  - "muon_n"\n')
+    _reload(handle, "definitions.hists", "tools.processor", "tools.check")
+    static = check.static_report()
+    assert static["errors"] == [], static["errors"]
+    # a histogram that no collection lists is never filled: it is named
+    assert static["inventory"]["unused"]["hists"] == ["forgotten"]
+    # the muon list written next to the merge replaced the shared one, for this channel only
+    selections = static["inventory"]["selections"]
+    assert selections["hard_muons"]["obj_cuts"]["muons"] == ["pT > 30 GeV"]
+    assert selections["hard_muons"]["obj_cuts"]["electrons"] == selections["baseline"]["obj_cuts"]["electrons"]
+    assert selections["baseline"]["obj_cuts"]["muons"] == ["pT > 10 GeV", "|eta| < 2.4"]
+
+    utilities = _module(handle, "tools.utilities")
+    fileset = utilities.make_fileset(["Signal"])
+    report = check.run_report(fileset, channels=["all", "hard_muons"], collections=["extra"],
+                              max_events=N_EVENTS)
+    assert report["ok"], report["error"]
+    dataset = report["datasets"]["Signal"]
+    # the soft third muon does not pass 30 GeV: filled in one channel, empty in the other
+    assert dataset["empty_hists"] == [] and dataset["warnings"] == [], dataset
+    assert dataset["empty_in_channels"] == {"third_muon_pt": ["hard_muons"]}, dataset["empty_in_channels"]
+    # the object cut shows in the counter, not in the cutflow
+    assert dataset["counters"]["hard_muons"]["Selected muons"] == 2 * dataset["cutflow"]["hard_muons"][-1]["raw"]
+    alone = check.run_report(fileset, channels=["hard_muons"], collections=["extra"], max_events=N_EVENTS)
+    assert alone["datasets"]["Signal"]["empty_hists"] == ["third_muon_pt"]
+    assert alone["datasets"]["Signal"]["empty_in_channels"] == {}
+
+    # a name that is already taken: reported before anything runs, not silently replaced
+    _append(handle, "definitions/hists.py", '\nhist_defs["muon_pt"] = obj_attr("muons", "pt", xmax=500)\n')
+    _reload(handle, "definitions.hists", "tools.processor", "tools.check")
+    errors = check.static_report()["errors"]
+    assert len(errors) == 1 and "'muon_pt' is defined twice in hist_defs" in errors[0], errors
+    run = subprocess.run(
+        [sys.executable, "-m", f"{handle['package']}.tools.check", "--sample", "Signal", "--json", "-"],
+        cwd=str(handle["project"]), env=dict(os.environ, MPLBACKEND="Agg"), capture_output=True, text=True)
+    assert run.returncode == 1, run.stdout + run.stderr
+    written = json.loads(run.stdout)
+    assert written["run"]["error"] == "not run: fix the static errors first"
 
 
 def test_unknown_names_fail_when_the_processor_is_built():
@@ -1019,7 +1089,10 @@ def test_scaleout_ships_the_package_and_dask_gives_the_same_answer():
 
 def test_command_line_runner_writes_output_and_sidecar():
     handle = _project("cli")
-    output = handle["base"] / "out.coffea"
+    # into a directory that does not exist yet: it is made before the run, not found
+    # missing after it
+    output = handle["base"] / "output" / "first" / "out.coffea"
+    assert not output.parent.exists()
     run = subprocess.run(
         [sys.executable, "-m", f"{handle['package']}.scripts.run_analysis", "--samples", "Signal",
          "--channels", "baseline", "--hists", "base", "--chunksize", "150", "-o", str(output)],
@@ -1051,12 +1124,23 @@ def test_check_tool_runs_the_generated_checker():
     static = json.loads(CheckAnalysisFrameworkTool(**patient)._run())
     assert static["status"] == "ok" and static["ok"] is True and "run" not in static
     assert static["static"]["channels"] == ["all", "baseline", "baseline_2muons"]
+    assert static["static"]["selections"]["baseline"]["evt_cuts"] == ["pass triggers", "PV filter"]
+    assert static["static"]["unused_hists"] == [] and static["static"]["n_selections_not_shown"] == 0
+    # the samples as the configs describe them
+    assert static["static"]["n_samples"] == 1
+    assert static["static"]["samples"] == {"Signal": {"is_data": False, "year": "2018", "n_files": 1}}
+    assert static["static"]["run_periods"] == {"2018": {"lumi": LUMI, "golden_json": None}}
     report = json.loads(CheckAnalysisFrameworkTool(
         **patient, sample="Signal", max_events=200,
         channels=["baseline_2muons"], hist_collections=["muon_base"])._run())
     assert report["ok"] is True and report["run"]["ok"] is True, report
+    # the cuts of the channel that was asked about, and of that one only
+    assert list(report["static"]["selections"]) == ["baseline_2muons"]
+    assert report["static"]["selections"]["baseline_2muons"]["obj_cuts"]["muons"] == ["pT > 10 GeV", "|eta| < 2.4"]
     dataset = report["run"]["datasets"]["Signal"]
+    assert dataset["empty_in_channels"] == {}
     assert dataset["n_events"] == 200 and dataset["empty_hists"] == []
+    assert report["run"]["max_events"] == 200 and dataset["files_in_sample"] == 1
     assert dataset["year"] == ["2018"] and dataset["scaled_sum_weights"] > 0
     assert _close(dataset["lumixs_weight"], LUMI * XSEC / dataset["scaled_sum_weights"])
     cutflow = dataset["cutflow"]["baseline_2muons"]
@@ -1066,6 +1150,32 @@ def test_check_tool_runs_the_generated_checker():
         **patient, sample_file=os.path.relpath(os.path.realpath(handle["file"]), workdir),
         max_events=100, channels=["all"], hist_collections=[])._run())
     assert by_file["run"]["datasets"]["signal"]["is_data"] == [False]     # decided from the file
+    assert by_file["run"]["datasets"]["signal"]["files_in_sample"] is None  # not a configured sample
+    # one call for a simulated and a data sample
+    import yaml
+    from tools.framework.tests import synthetic
+    data_file = handle["base"] / "data_b.root"
+    synthetic.write_nanoaod(str(data_file), n=120, data=True)
+    sample_cfg = handle["project"] / handle["package"] / "configs" / "samples" / "samples.yaml"
+    configured = sample_cfg.read_text(encoding="utf8")
+    locations = yaml.safe_load(configured)
+    (group,) = locations
+    locations[group]["samples"]["DataB"] = {"files": [str(data_file)], "is_data": True}
+    sample_cfg.write_text(yaml.safe_dump(locations), encoding="utf8")
+    try:
+        both = json.loads(CheckAnalysisFrameworkTool(
+            **patient, sample=["DataB", "Signal"], max_events=100,
+            channels=["baseline"], hist_collections=["muon_base"])._run())
+    finally:
+        sample_cfg.write_text(configured, encoding="utf8")
+    assert both["ok"] is True and set(both["run"]["datasets"]) == {"Signal", "DataB"}, both
+    assert "--sample DataB Signal" in both["command"]
+    assert both["run"]["datasets"]["DataB"]["is_data"] == [True]
+    assert both["run"]["datasets"]["Signal"]["is_data"] == [False]
+    assert both["run"]["datasets"]["DataB"]["lumixs_weight"] is None       # data is not scaled
+    # the samples that were asked about are listed first, as configured
+    assert list(both["static"]["samples"]) == ["DataB", "Signal"] and both["static"]["n_samples"] == 2
+    assert both["static"]["samples"]["DataB"] == {"is_data": True, "year": "2018", "n_files": 1}
     # a mistake in a config comes back as a report with the mistake in it
     selections = handle["project"] / handle["package"] / "configs" / "selections.yaml"
     original = selections.read_text(encoding="utf8")

@@ -12,7 +12,7 @@ Delta R, gen-particle navigation, cutflow bookkeeping, weights, corrections,
 luminosity masking. The job is to reach for the right attribute or method, not
 to reimplement it.
 
-The one tool worth calling first is `InspectFileTool`, which lists a file's
+The one tool worth calling first is `InspectFile`, which lists a file's
 trees, collections and branches. Everything after that is a short Python
 script.
 
@@ -100,8 +100,8 @@ instead:
 **Tools that are still the right call**, because they do something a one-liner
 does not:
 
-* `InspectFileTool` -- run it first on any unfamiliar file.
-* `NormalizeYieldTool` -- cross-section / luminosity normalisation, with
+* `InspectFile` -- run it first on any unfamiliar file.
+* `NormalizeYield` -- cross-section / luminosity normalisation, with
   plausibility checks on the result. It belongs to the `analysis` bundle, so
   it is only there when that bundle is active as well.
 

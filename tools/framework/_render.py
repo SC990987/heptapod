@@ -377,7 +377,7 @@ def build_plan(specs: List[Dict[str, Any]], triggers: Optional[List[str]] = None
             hists.append((hist_name, (
                 "h.Histogram(\n"
                 "        [\n"
-                f"            h.Axis(hist.axis.Regular(100, 0, 200, name={q(hist_name)},\n"
+                f"            h.Axis(hist.axis.Regular(*default_binnings[\"mass\"], name={q(hist_name)},\n"
                 f"                                     label={q(label)}),\n"
                 f"                   lambda objs, mask: objs[{q(name)}][mask, :2].sum().mass),\n"
                 "        ],\n"
@@ -484,10 +484,12 @@ def render_objects(plan: Dict[str, Any], package: str = PLACEHOLDER_PACKAGE) -> 
     out += [
         "",
         "# Objects a sample is allowed not to have: generator-level objects on data, a",
-        "# collection only some productions carry, a derived object that reads a branch only",
-        "# simulation has. Whatever needs one of them is skipped there, with a warning.",
-        "# Every other object must build in every sample: if one does not, a strict run",
-        "# stops and names it.",
+        "# collection only some productions carry. Whatever needs one of them is skipped",
+        "# there, with a warning. A derived object built from an optional object needs no",
+        "# entry of its own: it is absent wherever its input is. List a derived object only",
+        "# if its own definition reads a branch some samples lack (a simulation-only field",
+        "# of the muons, say). Every other object must build in every sample: if one does",
+        "# not, a strict run stops and names it.",
         "optional_objs = [" + ", ".join(q(name) for name in optional) + "]",
         "",
         "# Objects built from the selected objects of a channel, evaluated in this order.",
@@ -561,7 +563,11 @@ def render_hists(plan: Dict[str, Any], package: str = PLACEHOLDER_PACKAGE) -> st
            "as ``mask`` so they can apply it before indexing. Storage is weighted by default.",
            "",
            "Defining a histogram here does nothing by itself: a collection in",
-           "configs/hist_collections.yaml has to list its name.",
+           "configs/hist_collections.yaml has to list its name. Every collection named at",
+           "run time is filled in every channel named at run time, so a fill function that",
+           "picks a position (``objs[\"muons\"][mask, 0]``) needs an ``evt_mask`` for the",
+           "events that have none; a slice (``objs[\"muons\"][:, :1]``) does not. Counters",
+           "are different: all of them are filled, in every channel.",
            '"""',
            "",
            "import math",
@@ -572,11 +578,14 @@ def render_hists(plan: Dict[str, Any], package: str = PLACEHOLDER_PACKAGE) -> st
            f"from {package}.tools import histogram as h",
             "",
             "",
-            "# counters: one number per channel (and per sample), summed over events",
+            "# counters: one plain (unweighted) number per channel and sample, summed over",
+            "# the events that pass the channel's event cuts",
             "counter_defs = {"]
     out += [f"    {q(name)}: {expr}," for name, expr in plan["counters"]]
     out += ["}", "", "",
-            "# default labels and binnings",
+            "# Default labels and binnings. The binnings are the scaffold's defaults, not",
+            "# choices of this analysis: change them here, or per histogram with nbins, xmin",
+            "# and xmax. A new object gets its axis label from an entry in obj_labels.",
             "obj_labels = {"]
     out += [f"    {q(name)}: {q(label)}," for name, label in plan["labels"].items()]
     out += [
@@ -608,7 +617,11 @@ def render_hists(plan: Dict[str, Any], package: str = PLACEHOLDER_PACKAGE) -> st
         "",
         "",
         "def obj_attr(obj, attr, absval=False, nbins=None, xmin=None, xmax=None, label=None):",
-        '    """One-axis histogram of objs[obj].attr; attr "n" counts the objects per event."""',
+        '    """One-axis histogram of objs[obj].attr; attr "n" counts the objects per event.',
+        "",
+        "    Binning: nbins, xmin and xmax where given, else default_binnings[attr], else",
+        '    (100, 0, 100). The axis is named "<obj>_<attr>"; absval histograms |attr|.',
+        '    """',
         "    default_nbins, default_xmin, default_xmax = default_binnings.get(attr, (100, 0, 100))",
         "    nbins = default_nbins if nbins is None else nbins",
         "    xmin = default_xmin if xmin is None else xmin",
@@ -648,6 +661,10 @@ def render_selections(plan: Dict[str, Any]) -> str:
         "#",
         "# Reuse works through yaml anchors: '&name' labels a block, '*name' pastes it and",
         "# '<<: *name' merges a mapping. Lists pasted inside lists are flattened when read.",
+        "# A key written next to '<<: *name' replaces the merged key wholesale: to give one",
+        "# selection its own cuts for an object, write that object's whole list there",
+        "# (starting with its anchor, '- *muons_base', to keep the shared ones). Editing a",
+        "# shared block (_object_cuts, _event_cuts) changes every selection that merges it.",
         "#",
         "# The selections below were written by the scaffold so that there is something to",
         "# run. They are a starting point, not this analysis's selection: replace them.",
@@ -725,7 +742,7 @@ def render_run_periods(year: Optional[str], lumi: Optional[float], golden_json: 
         "# Run periods. lumi is the integrated luminosity in /pb, used to scale simulation.",
         "# golden_json names a file in data/ and is applied to data of that period; leave it",
         "# out to keep every luminosity section (the processor warns when it does).",
-        "# Quote the period names: yaml would otherwise read 2018 as a number.",
+        "# Period names are read as text: 2018 and \"2018\" name the same period.",
         "",
     ]
     if not year:

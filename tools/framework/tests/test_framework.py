@@ -987,6 +987,69 @@ def test_lepton_jets_do_not_take_over_names_that_are_in_use():
         assert yaml.safe_load(selections.read_text())["baseline_2ljs"]["evt_cuts"] == [">=2 ljs"]
 
 
+def test_a_name_defined_twice_is_reported_by_the_generated_checker():
+    """The check a project carries finds a definition that silently replaces another."""
+    import importlib
+
+    with tempfile.TemporaryDirectory() as tmp:
+        result = _create(tmp, name="dup_analysis", add_components=["lepton_jets"])
+        project = Path(tmp) / "dup_analysis"
+        assert not result["components_failed"], result["components_failed"]
+        package = result["package"]
+        sys.path.insert(0, str(project))
+        try:
+            check = importlib.import_module(f"{package}.tools.check")       # needs no coffea
+            # what the scaffold and a component write has every name once
+            assert check._duplicate_errors() == [], check._duplicate_errors()
+
+            find = check.duplicate_definitions
+            hists = (project / package / "definitions" / "hists.py").read_text(encoding="utf8")
+            cuts = (project / package / "definitions" / "cuts.py").read_text(encoding="utf8")
+            tables = check.DEFINITION_TABLES
+            assert find(hists, tables["hists.py"]) == [] and find(cuts, tables["cuts.py"]) == []
+
+            # the spellings by which an existing name gets defined again
+            first = hists.index('"muon_pt"')
+            line = hists.count("\n", 0, first) + 1
+            again = find(hists + '\nhist_defs["muon_pt"] = obj_attr("muons", "pt", xmax=500)\n',
+                         tables["hists.py"])
+            assert len(again) == 1 and "'muon_pt' is defined twice in hist_defs" in again[0], again
+            assert f"lines {line} and " in again[0], again
+            assert len(find(hists + '\nhist_defs.update({"muon_pt": None, "brand_new": None})\n',
+                            tables["hists.py"])) == 1
+            assert len(find(hists + '\ncounter_defs["Selected muons"] = lambda objs: 0\n',
+                            tables["hists.py"])) == 1
+            assert find(hists + '\nhist_defs["brand_new"] = None\nobj_labels["muons"] = "Mu"\n',
+                        tables["hists.py"]) == []          # a new name; a table that is not one
+            nested = find(cuts + '\nobj_cut_defs["muons"]["pT > 10 GeV"] = pt_above(11)\n',
+                          tables["cuts.py"])
+            assert len(nested) == 1 and "in obj_cut_defs['muons']" in nested[0], nested
+            assert len(find(cuts + '\nobj_cut_defs["muons"].update({"looseId": None, "new": None})\n',
+                            tables["cuts.py"])) == 1
+            assert len(find(cuts + '\nevt_cut_defs.update({">=2 muons": None})\n',
+                            tables["cuts.py"])) == 1
+            # the same key twice inside one dict literal, wherever it is
+            literal = find('x = {"a": 1, "b": {"c": 1, "c": 2}, "a": 3}\n')
+            assert len(literal) == 2 and all("written twice in one dict" in m for m in literal), literal
+            # starting a table afresh is not a redefinition of what was in it
+            assert find('hist_defs = {"a": 1}\nhist_defs = {"a": 2}\n', ("hist_defs",)) == []
+            # not followed: keys that are not plain text, and statements inside blocks
+            assert find('hist_defs = {}\nfor n in "ab":\n    hist_defs[n] = 1\n'
+                        'if True:\n    hist_defs["a"] = 1\nelse:\n    hist_defs["a"] = 2\n',
+                        ("hist_defs",)) == []
+
+            # in the project itself: reported as a static error, with the file named
+            with open(project / package / "definitions" / "hists.py", "a", encoding="utf8") as stream:
+                stream.write('\nhist_defs["electron_pt"] = obj_attr("electrons", "pt", xmax=500)\n')
+            errors = check._duplicate_errors()
+            assert len(errors) == 1 and errors[0].startswith("definitions/hists.py: 'electron_pt'"), errors
+            assert "Rename one of the two" in errors[0]
+        finally:
+            sys.path.remove(str(project))
+            for name in [m for m in sys.modules if m == package or m.startswith(package + ".")]:
+                del sys.modules[name]
+
+
 def test_damaged_block_markers_are_refused_untouched():
     text = "a = 1\n# >>> component: demo >>>\nb = 2\n"
     for damaged in (text, "# <<< component: demo <<<\n" + text,
@@ -1185,6 +1248,10 @@ def test_check_tool_requests_and_report_handling():
                    "--sample", "S", "--channels", "a", "b", "--hists", "--no-strict"]
     cmd = build_command("py", "pkg", "r.json", sample="S", tag="v2", sample_config="signal.yaml")
     assert cmd[-6:] == ["--sample", "S", "--tag", "v2", "--location-cfg", "signal.yaml"]
+    # several samples in one call: a simulated and a data sample, say
+    cmd = build_command("py", "pkg", "r.json", sample=["Sig", "Data"], channels=["a"])
+    assert cmd[-5:] == ["--sample", "Sig", "Data", "--channels", "a"]
+    assert "--sample" not in build_command("py", "pkg", "r.json", sample=[])
     cmd = build_command("py", "pkg", "r.json", sample_file="/d/file.root", is_data=True, year="2018")
     assert cmd[-7:] == ["--file", "/d/file.root", "--dataset", "file", "--data", "--year", "2018"]
     assert "--hists" not in cmd
@@ -1195,15 +1262,26 @@ def test_check_tool_requests_and_report_handling():
     assert check_module.missing_modules({"versions": {"coffea": None, "awkward": "2.8", "uproot": None,
                                                       "hist": "2.9", "numpy": None}}) == ["coffea", "uproot"]
     assert check_module.missing_modules({}) == []
+    # more channels than are shown, in an order that is not the alphabet's: the report
+    # file is written with sorted keys, the list of channels keeps the config's order
+    many = [f"ch{i:02d}" for i in range(44, 0, -1)] + ["k", "b"]
     report = {
         "ok": False, "versions": {"coffea": "x"},
         "static": {"errors": ["e"] * 100, "warnings": [],
-                   "inventory": {"channels": ["a"], "hist_collections": {"base": 3}, "n_hists": 3,
+                   "inventory": {"channels": many, "hist_collections": {"base": 3}, "n_hists": 3,
                                  "primary_objects": ["muons", "gens"], "derived_objects": [],
                                  "optional_objects": ["gens"],
-                                 "samples": {"S": {}}, "unused": {"hists": ["h1", "h2"]}}},
-        "run": {"ok": True, "seconds": 1.0, "error": None, "datasets": {"S": {
+                                 "selections": {name: {"obj_cuts": {"muons": [f"cut {name}"]},
+                                                       "evt_cuts": [">=1 muons"]}
+                                                for name in sorted(many)},
+                                 "samples": {"S": {"config": "samples.yaml", "tag": "main",
+                                                   "is_data": False, "year": "2018", "n_files": 2},
+                                             "A": {}, "D": {"is_data": True, "year": "", "n_files": 0}},
+                                 "run_periods": {"2018": {"lumi": 59830, "golden_json": None}},
+                                 "unused": {"hists": ["h1", "h2"]}}},
+        "run": {"ok": True, "seconds": 1.0, "max_events": 2000, "error": None, "datasets": {"S": {
             "n_events": 10, "is_data": [False], "lumixs_weight": 2.0, "n_hists": 3, "empty_hists": [],
+            "empty_in_channels": {"h3": ["b"]},
             "year": ["2018"], "scaled_sum_weights": 5.0,
             "warnings": ["w"], "n_removed_golden_json": 4, "unavailable_objects": ["gens"],
             "counters": {"a": {"Selected muons": 12.0}},
@@ -1214,9 +1292,33 @@ def test_check_tool_requests_and_report_handling():
     }
     short = condense(report)
     assert len(short["static"]["errors"]) == 61 and short["static"]["errors"][-1] == "... and 40 more"
-    assert short["static"]["n_unused"] == {"hists": 2} and short["static"]["samples"] == ["S"]
+    assert short["static"]["n_unused"] == {"hists": 2}
+    # the samples as configured: by name when none was asked about, those asked about first
+    assert short["static"]["n_samples"] == 3 and list(short["static"]["samples"]) == ["A", "D", "S"]
+    assert short["static"]["samples"]["S"] == {"is_data": False, "year": "2018", "n_files": 2}
+    assert short["static"]["samples"]["A"] == {}
+    assert list(condense(report, None, ["S", "not a sample"])["static"]["samples"]) == ["S", "A", "D"]
+    assert short["run"]["max_events"] == 2000
+    # what the run periods are configured with, and how many files the sample has
+    assert short["static"]["run_periods"] == {"2018": {"lumi": 59830, "golden_json": None}}
+    assert short["run"]["datasets"]["S"]["files_in_sample"] == 2
+    # a histogram no collection lists is never filled and nothing warns: it is named
+    assert short["static"]["unused_hists"] == ["h1", "h2"]
     assert short["static"]["optional_objects"] == ["gens"]
+    # the cuts each channel resolves to: of every channel when none was asked about (up
+    # to a limit, in the order of the config), of exactly the ones that were otherwise
+    assert list(short["static"]["selections"]) == many[:40]
+    assert short["static"]["n_selections_not_shown"] == 6
+    asked = condense(report, ["k", "b", "not a channel"])["static"]
+    assert asked["selections"] == {
+        "k": {"obj_cuts": {"muons": ["cut k"]}, "evt_cuts": [">=1 muons"]},
+        "b": {"obj_cuts": {"muons": ["cut b"]}, "evt_cuts": [">=1 muons"]}}
+    assert asked["n_selections_not_shown"] == 44
+    older = condense({"ok": True, "static": {"inventory": {"channels": ["a"]}}})["static"]
+    assert older["selections"] == {} and older["unused_hists"] == []      # a report without them
+    assert older["samples"] == {} and older["n_samples"] == 0 and older["run_periods"] == {}
     dataset = short["run"]["datasets"]["S"]
+    assert dataset["empty_in_channels"] == {"h3": ["b"]}
     # six significant digits: a small yield is not rounded away
     assert dataset["cutflow"]["a"] == [["None", 10, 20.0], ["c", 10, 20.0, "not applied"],
                                        ["d", 3, 3.12346e-05], ["e", 2, 123457000.0]]
@@ -1239,6 +1341,8 @@ def test_check_tool_requests_and_report_handling():
         _create(tmp, name="ana")
         assert "not both" in check_tool(base_directory=tmp, project_dir="ana", sample="S",
                                         sample_file="f.root")._run()
+        assert "not both" in check_tool(base_directory=tmp, project_dir="ana", sample=["S", "T"],
+                                        sample_file="f.root")._run()
         assert "File Not Found" in check_tool(base_directory=tmp, project_dir="ana",
                                               sample_file="f.root")._run()
         assert "Interpreter Not Found" in check_tool(base_directory=tmp, project_dir="ana",
@@ -1247,7 +1351,8 @@ def test_check_tool_requests_and_report_handling():
             base_directory=tmp, project_dir="ana", analysis_python="/no/such/python")._run()
         assert "at least 1" in check_tool(base_directory=tmp, project_dir="ana", max_events=0)._run()
         # names go to the checker's command line: none may pass for an option
-        for kwargs in ({"sample": "--json"}, {"sample": "S", "channels": ["baseline", "-x"]},
+        for kwargs in ({"sample": "--json"}, {"sample": ["S", "--json"]},
+                       {"sample": "S", "channels": ["baseline", "-x"]},
                        {"hist_collections": ["--no-strict"]}, {"sample": "S", "tag": "-t"},
                        {"year": "-2018"}, {"channels": "-x"}):
             out = check_tool(base_directory=tmp, project_dir="ana", **kwargs)._run()
@@ -1260,7 +1365,8 @@ def test_check_tool_requests_and_report_handling():
         for kwargs, expected in (({"max_events": "many"}, "max_events must be a whole number"),
                                  ({"max_events": True}, "max_events must be a whole number"),
                                  ({"timeout_s": None}, "timeout_s must be a whole number"),
-                                 ({"sample": ["S"]}, "sample must be a name"),
+                                 ({"sample": 5}, "sample must be a list of names"),
+                                 ({"sample": ["S", ["T"]]}, "sample must be a list of names"),
                                  ({"channels": [["a"]]}, "channels must be a list of names"),
                                  ({"hist_collections": 3}, "hist_collections must be a list"),
                                  ({"year": 20.18}, "year must be"),

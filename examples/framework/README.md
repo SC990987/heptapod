@@ -27,6 +27,12 @@ lives in `definitions/` (named objects, cuts and histograms, as small python
 functions) and `configs/` (which of them each selection and histogram collection
 uses). Running the analysis is naming selections and histogram collections.
 
+Extending it is asking for it. Once the framework exists, "I want a histogram of the
+electron pT" or "add a cut on the jets, in a new channel" needs no further tool: the
+agent writes the definition in `definitions/`, names it in `configs/`, and runs the
+check to show what moved. Only the parts below, which bring files of their own, go
+through a tool.
+
 Parts that only some analyses need are added on request:
 
 | Component | Adds |
@@ -121,7 +127,7 @@ See `task_prompt.md` for prompts to start from. The system prompt is at
 |------|---------|
 | InspectFile | What a NanoAOD-like file contains, and what will need care when coffea reads it |
 | ScaffoldAnalysisFramework | Write the framework, matched to a representative file |
-| CheckAnalysisFramework | Static consistency of configs and definitions; a short run with cutflows and warnings |
+| CheckAnalysisFramework | Static consistency of configs and definitions, the cuts each channel resolves to, and a short run with cutflows, object counts, empty histograms and warnings |
 | AddFrameworkComponent | Add `lepton_jets`, `scaleout`, `schema` or `chain_report` |
 
 Two skills come with them: `framework` (how the generated package is organised

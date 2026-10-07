@@ -141,8 +141,16 @@ chunk) is left out. Nothing in the output says what was left out, so compare
    and slims a collection. An event cut is `lambda objs: <mask per event>` and rejects
    whole events; it sees the collections *after* the object cuts.
 2. Add its name to a selection in `analysis_pkg/configs/selections.yaml`, under `obj_cuts:
-   <object>:` or `evt_cuts:`. Selections that include that selection through a yaml
-   anchor pick it up too.
+   <object>:` or `evt_cuts:`. A cut added to one of the shared blocks (`_object_cuts`,
+   `_event_cuts`) applies in every selection that merges that block. To give one
+   selection its own cuts for an object, write that object's list under the selection:
+   a key next to `<<:` replaces the merged one, so start the list with the object's
+   anchor (`- *muons_base`) to keep the shared cuts and add to them.
+
+An object cut removes objects, not events, and has no cutflow row of its own. It shows
+in the object counters, in the `<object>_n` histogram, and in the rows of the event
+cuts that count the object (`">=2 muons"` passes fewer events once muons are tighter).
+A name can be defined once: the check reports one that is defined twice.
 
 Inside an object cut, `obj` is the collection being cut and `objs` holds the others:
 primary objects defined above it already have their cuts applied, those below it do
@@ -156,6 +164,13 @@ object's own cuts).
    each a `hist` axis plus a function `(objs, mask) -> values`.
 2. Add its name to a collection in `analysis_pkg/configs/hist_collections.yaml`.
 
+Look first whether it is there already: the objects this framework started with have
+multiplicity, pT and eta-phi histograms (`muon_n`, `muon_pt`, `muon_eta_phi`, ...).
+Collections are not tied to selections: every collection named in a run is filled in
+every channel named in that run, so a histogram that picks a position
+(`objs["muons"][mask, 0]`) needs an `evt_mask` for events that have none. A slice
+(`objs["muons"][:, :1]`, the leading muon as a list of one or none) needs no mask.
+
 A fill function returns one entry per event: a number, or a list of numbers (one per
 muon, say). With two axes the entries are paired event by event: a number on one axis
 goes with every number of a list on the other, two lists must be equally long, and
@@ -167,7 +182,8 @@ Add it to `primary_objs` (read from the events: `lambda evts: evts.Tau`) or to
 `derived_objs` (built from selected objects: `lambda objs: ...`) in
 `analysis_pkg/definitions/objects.py`. Derived objects are built in the order they appear,
 so one may use those defined before it. If some samples do not have what the object
-reads, add its name to `optional_objs` in the same file.
+reads, add its name to `optional_objs` in the same file. A derived object built from an
+optional object needs no entry of its own: it is absent wherever its input is.
 
 Every jagged collection is ordered by pT and cut on its own, so two objects do not
 stay aligned element by element. To keep something with each object, make it a field

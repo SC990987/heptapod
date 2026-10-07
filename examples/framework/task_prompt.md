@@ -28,10 +28,24 @@ assumed for them. Use the trigger paths `HLT_DoubleL2Mu23NoVtx_2Cha` and
 
 ## Extend an existing framework
 
+Changes to the analysis need no tool of their own: the agent edits the framework's
+definitions and configs, and checks the result. Say it the way you would say it to a
+colleague.
+
+- I want a new histogram to plot the electron pT.
+- Add a cut requiring electrons to have pT above 25 GeV, but only in a new channel
+  called `signal_region`.
+- Tighten the muon selection to the medium ID and tell me how the yields change.
+- I need jets cleaned from muons: drop jets within ΔR 0.4 of a selected muon, and
+  give me their multiplicity and pT.
 - Add an event cut that vetoes events with a b-tagged jet. The working point is
   `btagDeepFlavB > 0.2783`. Use it in a new channel built on the signal region.
 - Add the 2018 data sample in `data/SingleMuon/` with the golden JSON
   `data/Cert_2018.json` and a luminosity of 59830 /pb.
+- Run the baseline on the ttbar sample and plot the MET for it and for data.
+
+Parts that bring files of their own are added as components:
+
 - Add lepton jets built from muons, displaced muons, electrons and photons with
   a radius of 0.4, and a channel requiring two of them.
 - Set the framework up to run on HTCondor at the LPC.

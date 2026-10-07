@@ -311,8 +311,9 @@ def cutflow_table(out, channel, samples=None, weighted=True):
 
 
 def save_output(output, path):
-    """Write a processor output to a .coffea file."""
+    """Write a processor output to a .coffea file, creating its directory if needed."""
     from coffea.util import save
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     save(output, path)
 
 

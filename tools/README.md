@@ -885,10 +885,10 @@ them afresh. If the file was edited elsewhere it is kept, and the answer says
 
 **Input Parameters:**
 - `project_dir` (str): The framework's directory
-- `sample` (str, optional): Configured sample to run on; static checks only if omitted
+- `sample` (str or list, optional): Configured sample to run on, or several (a simulated and a data sample in one call); static checks only if omitted
 - `tag`, `sample_config` (str, optional): Group of the sample, and name of the file under `configs/samples/` that defines it, when not the defaults
 - `sample_file` (str, optional): Or a ROOT file to run on, with `is_data` and `year`
-- `channels`, `hist_collections` (list, optional): What to run (default: all)
+- `channels`, `hist_collections` (list, optional): What to run (default: every channel, every collection)
 - `max_events` (int): Roughly how many events to process (default: 2000)
 - `strict` (bool): Stop at the first failure (default: True)
 - `venv` (str, optional): Virtual environment to run with
@@ -901,16 +901,27 @@ them afresh. If the file was edited elsewhere it is kept, and the answer says
   "ok": true,
   "python": "/path/to/python",
   "versions": {"coffea": "...", "awkward": "..."},
-  "static": {"errors": [], "warnings": [], "channels": ["all", "baseline"], "optional_objects": ["gens"]},
-  "run": {"ok": true, "datasets": {"Signal": {
+  "static": {"errors": [], "warnings": [], "channels": ["all", "baseline"], "optional_objects": ["gens"],
+             "hist_collections": {"muon_base": 4, "base": 20}, "n_hists": 20,
+             "samples": {"Signal": {"is_data": false, "year": "2018", "n_files": 3}}, "n_samples": 1,
+             "run_periods": {"2018": {"lumi": 59830, "golden_json": null}},
+             "selections": {"baseline": {"obj_cuts": {"muons": ["pT > 10 GeV", "|eta| < 2.4"]},
+                                         "evt_cuts": ["pass triggers", "PV filter"]}},
+             "n_selections_not_shown": 1, "n_unused": {"obj_cuts": 26, "evt_cuts": 8, "hists": 0},
+             "unused_hists": []},
+  "run": {"ok": true, "seconds": 7.1, "max_events": 2000, "datasets": {"Signal": {
     "n_events": 2000,
+    "files_in_sample": 3,
     "is_data": [false],
     "year": ["2018"],
     "scaled_sum_weights": 2000.0,
     "lumixs_weight": null,
+    "n_removed_golden_json": 0,
     "cutflow": {"baseline": [["None", 2000, 2000.0], ["pass triggers", 1500, 1500.0]]},
     "counters": {"baseline": {"Selected muons": 2710.0}},
+    "n_hists": 20,
     "empty_hists": [],
+    "empty_in_channels": {},
     "unavailable_objects": [],
     "warnings": []
   }}}
@@ -918,7 +929,15 @@ them afresh. If the file was edited elsewhere it is kept, and the answer says
 ```
 
 `status` says that the check ran; `ok` says whether it found errors (warnings do
-not change it). When a run stops, `run.error` holds the chain of errors and
+not change it). A name defined twice in a definitions file is a static error.
+`static.selections` holds the cuts each channel applies once the yaml anchors and
+merges are resolved (for the channels named in the call, else for all, up to 40), and
+`static.unused_hists` the histograms no collection lists. Per dataset,
+`empty_hists` are histograms with no entry in any channel that was run and
+`empty_in_channels` those empty in some of them; `counters` are unweighted
+numbers over the events that pass a channel's event cuts. The answer does not hold
+the axis or the contents of a histogram, and only the first file of a sample is
+read. When a run stops, `run.error` holds the chain of errors and
 `run.traceback` the end of the traceback. Weighted yields are scaled to
 lumi * cross section when `lumixs_weight` is a number, and are sums of
 generator weights when it is null. The check runs

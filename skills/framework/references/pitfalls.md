@@ -7,11 +7,37 @@ Start from what `CheckAnalysisFramework` returned. Read it in this order:
 2. `static.errors`: nothing runs until these are fixed;
 3. `run.error` (and `run.traceback`): the run stopped;
 4. per dataset in `run.datasets`: `warnings`, `unavailable_objects`, then the
-   `cutflow`, then `empty_hists`;
-5. `static.warnings`: usually missing normalisation inputs.
+   `cutflow`, `counters`, `empty_hists` and `empty_in_channels`;
+5. `static.selections`: do the channels apply the cuts you meant them to?
+6. `static.warnings`: usually missing normalisation inputs.
 
 `ok` is the verdict (`"status": "ok"` only says the checker ran). `ok: true` with
 warnings is normal; the warnings still need reading.
+
+What the fields hold:
+
+| Field | Holds |
+|-------|-------|
+| `static.selections` | per channel, `obj_cuts` (object to cut names) and `evt_cuts` after the yaml anchors and merges are resolved; for the channels named in the call, else for all of them, up to 40 (`n_selections_not_shown` counts the rest) |
+| `static.samples` | per sample, what the configs say: `is_data`, `year`, `n_files`. The samples named in the call come first; `n_samples` counts all. Whether the files exist is not checked here |
+| `static.run_periods` | per run period, the `lumi` and `golden_json` it is configured with |
+| `static.hist_collections`, `static.n_hists` | the number of histograms in each collection, and the number defined |
+| `static.n_unused` | how many defined cuts and histograms nothing uses. Unused cuts are normal: the definitions are a menu |
+| `static.unused_hists` | the histograms no collection lists: never filled, and nothing warns |
+| `n_events`, `run.max_events`, `files_in_sample` | what the run read: one chunk from the start of the sample's first file. Under three quarters of `max_events`, that was the whole file; otherwise the file may hold more. The sample's other files (`files_in_sample` counts all) are never opened by the check |
+| `n_removed_golden_json` | data: the events outside the period's golden JSON, removed before anything is counted. The first cutflow row is `n_events` minus this |
+| `cutflow` | per channel, rows of `[cut, events, weighted events]`; a fourth element `"not applied"` marks a cut that was skipped. The first row, `"None"`, is before any event cut. Weighted numbers are given to six significant digits |
+| `counters` | per channel, the numbers of `counter_defs`: plain, unweighted, over the events that pass the channel's event cuts. `"Selected muons"` counts muons: where an object cut shows. Whenever fewer events pass (a tighter event cut, or a tighter object cut that an event cut counts), every counter of the channel drops |
+| `n_hists` (per dataset) | the histograms of the collections that were run |
+| `empty_hists` | histograms with no entry in any channel that was run. Entries in the overflow count as entries |
+| `empty_in_channels` | histograms filled in some of those channels, with the channels they are empty in |
+| `scaled_sum_weights`, `lumixs_weight` | the sum of generator weights over the skim factor (for data: the number of events kept), and the factor simulation was scaled by, null when it was not scaled. Their product is lumi × cross section |
+
+The tool's `hist_collections` is `--hists` on the project's own scripts, and `sample`
+is `--sample` there (`--samples` for `run_analysis`). Their defaults differ: the check
+fills every collection unless told otherwise, `run_analysis` none. The check keeps
+nothing between calls: to know what an edit moved, compare with the answer from
+before it. The answer never holds the axis or the contents of a histogram.
 
 ## The check did not run
 
@@ -44,12 +70,20 @@ warnings is normal; the warnings still need reading.
 | `the cross section of sample 'x' cannot be read` | Its entry in `cross_sections.yaml` is not a number. |
 | `the static checks could not be completed (...)` | A definition has a shape the check did not expect; the traceback under the message shows which. |
 | `histogram 'x' ... is not defined` | A collection lists a histogram that `hist_defs` does not have. |
+| `definitions/hists.py: 'x' is defined twice in hist_defs (lines a and b)` | The name was already taken: the later definition would replace the earlier without a word. Usually the thing asked for existed. Keep one, or rename the new one. The same for cuts, objects and counters. |
+| `definitions/cuts.py: 'x' is written twice in one dict (lines a and b)` | The same key twice inside one `{...}`: python keeps the second. |
 | `axis name 'x' is reserved` | Rename the axis: not `weight`, `sample`, `threads`, `channel`, and not empty. |
 | `the analysis cannot be imported` | Usually a python error in `definitions/`: the traceback names the file and line. If the missing module is a library, see "The check did not run". |
 | `golden JSON 'x' ... is not in .../data` | Copy the file into `PKG/data/` or fix the name in `run_periods.yaml`. |
 
 A yaml error such as `found undefined alias` means an anchor is used above its
 definition, or was renamed in one place only.
+
+Three config mistakes are *not* errors, and only `static.selections` shows them. An
+object's list written next to `<<: *object_cuts` replaces the shared list for that
+object, so a cut that was not repeated there is gone from that channel. A cut added
+to a shared block is in every channel that merges it, wanted or not. And a channel
+written without `evt_cuts` has no event cuts, not the shared ones.
 
 Static warnings worth knowing: `has no cross section`, `has no lumi` and `is in run
 period 'x', which is not in configs/run_periods.yaml` are missing inputs, to be
@@ -155,7 +189,9 @@ A run over few events can legitimately end at zero for a tight selection; raise
 
 ## A histogram stays empty
 
-`empty_hists` lists histograms nothing was filled into, in any channel that was run.
+`empty_hists` lists histograms nothing was filled into, in any channel that was run;
+`empty_in_channels` lists those filled in some channels and not in others. For a
+histogram in either list:
 
 - its fill function failed: there is a matching `could not be filled` warning;
 - it needs an object that is absent: there is a matching `not filled: 'x' is not
@@ -163,8 +199,28 @@ A run over few events can legitimately end at zero for a tight selection; raise
 - its `evt_mask` passes nothing in the channels that were run;
 - no event survived the selection.
 
+A histogram that is in neither list and still is not in the output was not part of
+the run. Either no collection names it (it is then in `static.unused_hists`), or its
+collection was not among the `hist_collections` of the call. The run's `n_hists`
+counts the histograms of the collections that were run.
+
 Values outside the axis range are not the reason: the check counts the overflow bins
 too (a *plot* drawn without them can still look empty).
+
+## A derived object is empty
+
+Its counter says 0, or every histogram of it is in `empty_hists` with no warning.
+The object was built and holds nothing. Before reporting that as a result:
+
+- look at what it is built from. The inputs are the channel's *selected* objects: a
+  match against `gen_muons` finds nothing if `gen_muons` is itself empty (no such
+  particle in the record, or cuts on `gens` that remove it);
+- a ΔR match of zero between reconstructed and generated objects that should
+  correspond usually means the wrong objects are compared, or the radius is in the
+  wrong units, not that nothing matches;
+- the check cannot show the size of an object that has no counter. Look at the events
+  themselves ("Look inside a sample" in `howto.md`), or say plainly that the zero is
+  unexplained: do not present it as a measured rate.
 
 ## Weighted yields look wrong
 

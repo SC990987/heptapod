@@ -13,6 +13,7 @@ rather than adding them by hand.
 """
 
 import argparse
+import os
 import sys
 import time
 
@@ -67,6 +68,9 @@ def main(argv=None):
                         help="turn cut failures into warnings instead of stopping")
     parser.add_argument("-o", "--output", default="output.coffea")
     args = parser.parse_args(argv)
+
+    # now rather than after the run: a place that cannot be written to is found out here
+    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
 
     fileset = utilities.make_fileset(args.samples, tag=args.tag, max_files=args.max_files,
                                      location_cfg=args.location_cfg)

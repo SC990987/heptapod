@@ -52,6 +52,25 @@ Nothing below `template/` is imported by HEPTAPOD (`conftest.py` keeps pytest ou
 it). To change what every generated framework contains, edit the template; to change
 what is chosen per analysis, edit `_render.py`.
 
+## How a framework is extended
+
+There is deliberately no tool per kind of change. A cut, a histogram, a channel, an
+object, a sample: the agent writes the definition in `definitions/` and names it in
+`configs/` itself, following the `framework` skill, and `CheckAnalysisFrameworkTool`
+says whether the result holds together. What the check returns is shaped for that
+loop:
+
+- a name defined twice in a definitions file is a static error (python would let
+  the later definition replace the earlier one without a word);
+- `static.selections` holds the cuts each channel applies once the yaml anchors and
+  merges are resolved, which is the proof that an edit landed where it was meant to;
+- `static.unused_hists` names histograms that no collection lists, and per dataset
+  `empty_hists` and `empty_in_channels` say where a histogram received nothing;
+- `counters` and the cutflow rows are the numbers to compare before and after;
+- `static.samples` and `static.run_periods` show what the configs say about each
+  sample and period, and `files_in_sample` that the run read one file of several;
+- `sample` takes several names, so one call covers a simulated and a data sample.
+
 A component adds files and, where the analyst's own files are involved, appends a block
 between `# >>> component: NAME >>>` and `# <<< component: NAME <<<`. Applying one
 again with the same options changes nothing; `overwrite=true` regenerates files and
@@ -144,11 +163,12 @@ could be installed. What follows separates what was checked from what was not.
 |------|-----|
 | Every python file here and every file a scaffold produces compiles | byte-compiled on Python 3.11, 3.12 and 3.13; generated files also parse as Python 3.9 syntax; `ruff` rules E, F and W with the line-length rule (E501) switched off |
 | `toolkit.yaml` is well-formed and every module file it names exists | toolbase's `validate_toolkit`, called from the toolbase 0.16.0 source. It does not import the tool modules. |
-| Scaffolding, components, block editing, undoing of failed writes, detection of names in use, validation of names and values, request handling of the three tools, the launcher's editing of harness configs | `tests/test_framework.py` (32 tests) and `tools/analysis/test_nanoaod_inspect.py` (15 tests, one of which needs uproot and was skipped), with a stand-in for `orchestral.tools.base` |
+| Scaffolding, components, block editing, undoing of failed writes, detection of names in use, validation of names and values, request handling of the three tools, the launcher's editing of harness configs | `tests/test_framework.py` (33 tests) and `tools/analysis/test_nanoaod_inspect.py` (15 tests, one of which needs uproot and was skipped), with a stand-in for `orchestral.tools.base` |
 | Generated projects: no placeholder left, configs parse as yaml, every name used in a config is defined, notebooks are valid JSON whose code cells compile | same tests |
 | The scaffold on the layout of a real LLP-NanoAOD file: 2009 branches, forming 56 collections (32 lists of objects, 24 one-per-event) and 23 single branches | scaffolded from the branch list of `CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3_part-0.root`, extracted without uproot. Only the branch *names* were used. |
 | The fixture writer's grouping of branches into collections | run on the branch lists of that file and of a 2018 data file (which has `nProton_multiRP`), and compared with the counter each branch names in its leaf title: no disagreement in 836 and 773 jagged branches |
-| Engine control flow: channels, derived objects, optional and required objects, strict and lenient failures, empty chunks, accumulation, normalisation arithmetic, merging of separate runs, error classification by origin, the metadata cache, run periods, pairing of histogram axes, config mistakes, sample groups, the command-line scripts, the sidecar, the chain report's comparison, the index wrapper surviving a module reload | driven end to end against small stand-ins for awkward, hist and coffea. This shows the python logic is coherent. It says nothing about how the real libraries behave: the stand-in for awkward has no missing values at all. |
+| Engine control flow: channels, derived objects, optional and required objects, strict and lenient failures, empty chunks, accumulation, normalisation arithmetic, merging of separate runs, error classification by origin, the metadata cache, run periods, pairing of histogram axes, config mistakes, sample groups, the command-line scripts, the sidecar, the chain report's comparison, the index wrapper surviving a module reload | driven end to end against small stand-ins for awkward, hist and coffea. This shows the python logic is coherent. It says nothing about how the real libraries behave: the stand-in for awkward is a few hundred lines written from a reading of awkward's rules, with missing values one level deep only. |
+| An agent extending a scaffolded framework with nothing but the system prompt, the two skills and the check | twenty simulated sessions in four rounds, each a fresh agent given one request in a user's words ("i want a new histogram to plot electron PT", a cut for one channel, a jet veto, a tighter muon ID with the change in yields, a changed threshold, a control region, generator-level and generator-matched muons, a new sample, a new data period with its golden JSON, a flat scale factor, jets cleaned from muons, ...). All ended with the check passing and with edits confined to `definitions/` and `configs/`, or with no edit where what was asked for existed. What they stumbled over after each round was fed back into the skill, the system prompt and the check's answer. The check ran against the same stand-ins and made-up events, so this tests the instructions and the workflow, not coffea, and not one of the run or plot commands the agents handed over was executed. |
 | API usage | read against the sources of coffea 2025.5.0rc2, 2025.7.0, 2025.7.3, 2025.9.0, 2025.10.2, 2025.11.0, 2025.12.0, 2026.4.0, 2026.5.0, 2026.7.0 and 2026.9.0, awkward 2.8.7 and 2.14.0, uproot 5.7.5, distributed 2025.3.0 and 2026.8.0, fastjet (scikit-hep), hist, boost-histogram, mplhep 1.2.0, vector, fsspec, fsspec-xrootd, lpcjobqueue and toolbase 0.16.0 |
 
 Three reviews of the code against those sources found defects that no test here could
@@ -160,7 +180,7 @@ tests below have passed.
 
 ### Never executed
 
-- **All of `tests/test_framework_run.py`** (21 tests). In particular:
+- **All of `tests/test_framework_run.py`** (22 tests). In particular:
   - any real `Runner` call, with any executor, and `metadata_cache={}` on it;
   - `utilities.as_lorentz`, `dR`, `matched`, `lxy` on real arrays;
   - `AnalysisSchema` hiding `GenPart_px/py/pz` on a real file, and its wrapper
@@ -182,8 +202,9 @@ tests below have passed.
   `InspectFileTool` or by the scaffold. `tests/synthetic.py` has never written one.
   How the function tells an RNTuple from a TTree is taken from uproot's source.
 - The three tools under real Orchestral. The field declarations (for instance
-  `Optional[Union[str, int]]` for `year`) have not been through its schema generation,
-  and its own validation of argument types runs before the checks written here.
+  `Optional[Union[str, int]]` for `year`, and `Optional[Union[str, List[str]]]` for the
+  check's `sample`) have not been through its schema generation, and its own
+  validation of argument types runs before the checks written here.
 - `tools/plotting.py` and the generated notebooks.
 - `pip install -e .` of a generated project, and `python -m PKG.scripts.*` from an
   installed one.
@@ -222,8 +243,8 @@ PY=$(grep -h '^python_path:' ~/.toolbase/cache/heptapod/*/.install_meta.yaml | h
 $PY -c "import coffea, awkward, uproot, hist, fastjet, numba; print(coffea.__version__, awkward.__version__, uproot.__version__, numba.__version__)"
 
 $PY tools/analysis/test_nanoaod_inspect.py --no-skips         # 15 tests
-$PY tools/framework/tests/test_framework.py --no-skips        # 32 tests
-$PY tools/framework/tests/test_framework_run.py               # 21 tests
+$PY tools/framework/tests/test_framework.py --no-skips        # 33 tests
+$PY tools/framework/tests/test_framework_run.py               # 22 tests
 ```
 
 In an environment of your own instead (an existing analysis environment with coffea),
@@ -266,8 +287,8 @@ report = json.loads(CheckAnalysisFrameworkTool(
 print(json.dumps(report, indent=1))
 ```
 
-The check reports cutflows, warnings and which histograms stayed empty; it does not
-return histogram contents. For the file named above, the physics cross-check is the
+The check reports the cuts each channel applies, cutflows, object counts, warnings
+and which histograms stayed empty; it does not return histogram contents. For the file named above, the physics cross-check is the
 invariant mass of the two leading lepton jets, which should peak near the 500 GeV of
 the sample. To look at it, run the generated code with the same interpreter from
 inside `llp/`:

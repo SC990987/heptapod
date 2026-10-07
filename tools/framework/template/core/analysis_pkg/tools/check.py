@@ -16,6 +16,7 @@ full report (use it rather than parsing the printed summary).
 """
 
 import argparse
+import ast
 import glob
 import json
 import os
@@ -51,6 +52,130 @@ def _plain(value):
     return value
 
 
+# The tables of the definitions: a name given twice in one of them replaces the first
+# definition without a word, which python allows and nobody means.
+DEFINITION_TABLES = {
+    "objects.py": ("primary_objs", "derived_objs"),
+    "cuts.py": ("obj_cut_defs", "evt_cut_defs"),
+    "hists.py": ("hist_defs", "counter_defs"),
+}
+
+
+def _literal_keys(node, prefix=()):
+    """(path, line) for every text key of a dict literal, nested dicts included."""
+    found = []
+    for key, value in zip(node.keys, node.values):
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            path = prefix + (key.value,)
+            found.append((path, key.lineno))
+            if isinstance(value, ast.Dict):
+                found += _literal_keys(value, path)
+    return found
+
+
+def _subscript_path(node):
+    """``table["a"]["b"]`` -> ("table", ("a", "b")); None for anything else."""
+    path = []
+    while isinstance(node, ast.Subscript):
+        key = node.slice
+        if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
+            return None
+        path.append(key.value)
+        node = node.value
+    if isinstance(node, ast.Name):
+        return node.id, tuple(reversed(path))
+    return None
+
+
+def duplicate_definitions(source, tables=()):
+    """Names defined more than once in the text of one definitions file.
+
+    Returns messages for (a) a key written twice inside one dict literal, anywhere in
+    the file, and (b) an entry of one of ``tables`` that a later top-level statement
+    defines again (``table["x"] = ...``, ``table.update({"x": ...})``, the same one
+    level down for ``table["obj"]["x"]``). Only statements at the top level of the
+    file are followed, and only keys written as plain text.
+    """
+    tree = ast.parse(source)
+    messages = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            seen = {}
+            for key in node.keys:
+                if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    if key.value in seen:
+                        messages.append(
+                            f"'{key.value}' is written twice in one dict (lines "
+                            f"{seen[key.value]} and {key.lineno}): the second replaces the first")
+                    else:
+                        seen[key.value] = key.lineno
+    defined = {}                      # (table, path) -> line of the first definition
+
+    def define(table, path, line):
+        if not path:
+            return
+        first = defined.setdefault((table, path), line)
+        if first != line:
+            where = table + "".join(f"['{part}']" for part in path[:-1])
+            messages.append(
+                f"'{path[-1]}' is defined twice in {where} (lines {first} and {line}): the "
+                "later definition replaces the earlier one")
+
+    for statement in tree.body:
+        targets, value = [], None
+        if isinstance(statement, ast.Assign):
+            targets, value = statement.targets, statement.value
+        elif isinstance(statement, ast.AnnAssign) and statement.value is not None:
+            targets, value = [statement.target], statement.value
+        for target in targets:
+            if isinstance(target, ast.Name) and target.id in tables:
+                # the table itself is (re)started here
+                for key in [k for k in defined if k[0] == target.id]:
+                    del defined[key]
+                if isinstance(value, ast.Dict):
+                    for path, line in _literal_keys(value):
+                        defined.setdefault((target.id, path), line)
+                continue
+            located = _subscript_path(target)
+            if located is None or located[0] not in tables:
+                continue
+            table, path = located
+            define(table, path, target.lineno)
+            if isinstance(value, ast.Dict):
+                for sub_path, line in _literal_keys(value, path):
+                    defined.setdefault((table, sub_path), line)
+        call = statement.value if isinstance(statement, ast.Expr) else None
+        if (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                and call.func.attr == "update" and call.args and isinstance(call.args[0], ast.Dict)):
+            base = call.func.value
+            located = (base.id, ()) if isinstance(base, ast.Name) else _subscript_path(base)
+            if located is not None and located[0] in tables:
+                table, prefix = located
+                literal = _literal_keys(call.args[0], prefix)
+                top = len(prefix) + 1
+                for path, line in literal:
+                    if len(path) == top:
+                        define(table, path, line)
+                    else:
+                        defined.setdefault((table, path), line)
+    return messages
+
+
+def _duplicate_errors():
+    """duplicate_definitions over the three definitions files, as static errors."""
+    errors = []
+    for name, tables in DEFINITION_TABLES.items():
+        path = os.path.join(BASE_DIR, "definitions", name)
+        try:
+            with open(path, encoding="utf8") as handle:
+                found = duplicate_definitions(handle.read(), tables)
+        except (OSError, SyntaxError, ValueError):
+            continue        # a file that cannot be read or parsed is reported by the import
+        errors += [f"definitions/{name}: {message}. Rename one of the two, or delete the one "
+                   "that is not wanted" for message in found]
+    return errors
+
+
 def static_report():
     """Check the definitions and configs against each other, without reading any events."""
     report = {"errors": [], "warnings": [], "inventory": {}}
@@ -67,6 +192,7 @@ def static_report():
 
 def _static_checks(report):
     errors, warnings = report["errors"], report["warnings"]
+    errors += _duplicate_errors()
     try:
         from analysis_pkg.definitions import objects as object_defs
         from analysis_pkg.definitions import weights
@@ -122,11 +248,16 @@ def _static_checks(report):
     except Exception as exc:
         errors.append(f"the configs cannot be read ({utilities.brief(exc)})")
         return report
+    resolved = {}
     if not channels:
         errors.append("configs/selections.yaml defines no channel")
     else:
         try:
-            AnalysisProcessor(channels, collections)
+            built = AnalysisProcessor(channels, collections)
+            # what each channel applies once the yaml anchors and merges are resolved
+            resolved = {channel: {"obj_cuts": {obj: list(names) for obj, names in cuts["obj"].items()},
+                                  "evt_cuts": list(cuts["evt"])}
+                        for channel, cuts in built.channel_cuts.items()}
         except Exception as exc:
             lines = str(exc).splitlines()
             if isinstance(exc, ValueError) and len(lines) > 1 and \
@@ -163,10 +294,12 @@ def _static_checks(report):
         periods = utilities.load_yaml(utilities.resolve_path("configs/run_periods.yaml", ""))
     except Exception:
         periods = {}
+    run_periods = {}
     for year, cfg in periods.items():
         cfg = cfg or {}
         if not isinstance(cfg, dict):
             continue
+        run_periods[str(year)] = {"lumi": cfg.get("lumi"), "golden_json": cfg.get("golden_json")}
         if cfg.get("lumi") is None:
             warnings.append(f"run period '{year}' has no lumi: simulation for it will not be scaled")
         golden = cfg.get("golden_json")
@@ -240,7 +373,9 @@ def _static_checks(report):
         "n_hists": len(hist_defs),
         "counters": list(counter_defs),
         "unused": unused,
+        "selections": resolved,
         "samples": samples,
+        "run_periods": run_periods,
     }
 
 
@@ -274,6 +409,14 @@ def _is_filled(histogram):
         if view.dtype.names and "variance" in view.dtype.names:
             return bool(np.any(view["variance"] > 0))
         return bool(np.any(np.asarray(view) != 0))
+    except Exception:
+        return None
+
+
+def _is_filled_in(histogram, channel):
+    """_is_filled for one channel of a histogram (None when that cannot be told)."""
+    try:
+        return _is_filled(histogram[{"channel": channel}])
     except Exception:
         return None
 
@@ -318,6 +461,14 @@ def run_report(fileset, channels=None, collections=None, max_events=2000,
         for dataset, output in out.items():
             hists = output["hists"]
             empty = sorted(name for name, h in hists.items() if _is_filled(h) is False)
+            # filled somewhere, but with nothing in these channels
+            partly = {}
+            for name, h in sorted(hists.items()):
+                if name in empty or len(channels) < 2:
+                    continue
+                without = [channel for channel in channels if _is_filled_in(h, channel) is False]
+                if without:
+                    partly[name] = without
             meta = output["metadata"]
             report["datasets"][dataset] = {
                 "n_events": int(meta["n_evts"]),
@@ -334,6 +485,7 @@ def run_report(fileset, channels=None, collections=None, max_events=2000,
                 "counters": output["counters"],
                 "n_hists": len(hists),
                 "empty_hists": empty,
+                "empty_in_channels": partly,
                 "warnings": sorted(output["warnings"]),
             }
         report["ok"] = True
@@ -396,6 +548,8 @@ def summarise(report, stream=None):
     for dataset, info in run["datasets"].items():
         print(f"  {dataset}: {info['n_events']} events, {len(info['warnings'])} warning(s), "
               f"{len(info['empty_hists'])}/{info['n_hists']} histograms empty", file=stream)
+        for name, without in (info.get("empty_in_channels") or {}).items():
+            print(f"    histogram '{name}' has no entries in: {', '.join(without)}", file=stream)
         if info.get("unavailable_objects"):
             print(f"    objects not available: {', '.join(info['unavailable_objects'])}",
                   file=stream)

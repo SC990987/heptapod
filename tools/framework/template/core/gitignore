@@ -2,6 +2,9 @@
 *.coffea
 *.meta.yaml
 
+# runs and figures made along the way
+/output/
+
 # python
 __pycache__/
 *.py[cod]

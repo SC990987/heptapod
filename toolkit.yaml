@@ -293,8 +293,9 @@ tools:
   - module: tools.framework.check
     name: CheckAnalysisFrameworkTool
     description: Run a scaffolded analysis framework's self-check - static consistency
-      of configs and definitions, and optionally a short run that returns cutflows,
-      empty histograms and every warning the processor recorded.
+      of configs and definitions and the cuts each channel resolves to, and optionally
+      a short run that returns cutflows, object counts, empty histograms and every
+      warning the processor recorded. Called after every change to the framework.
     bundle: framework
   - module: tools.inspire.inspire_tools
     name: InspireAuthorTool
