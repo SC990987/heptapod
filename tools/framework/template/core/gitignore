@@ -1,0 +1,24 @@
+# processor outputs and their metadata sidecars
+*.coffea
+*.meta.yaml
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# notebooks
+.ipynb_checkpoints/
+
+# grid proxies must never be committed
+x509*
+*.pem
+
+# OS and network-mount leftovers
+.DS_Store
+._*
+.nfs*

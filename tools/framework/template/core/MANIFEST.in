@@ -1,0 +1,3 @@
+include analysis_pkg/configs/*.yaml
+include analysis_pkg/configs/samples/*.yaml
+include analysis_pkg/data/*

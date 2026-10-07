@@ -718,3 +718,215 @@ tool = EnumerateDiagramsTool(
     base_directory="./workspace"
 )
 ```
+
+---
+
+### NanoAOD & Analysis Framework Tools
+
+These tools work on NanoAOD-like ROOT files and on coffea analysis frameworks
+rather than on `evtjsonl` events. `InspectFileTool` is in the `coffea` and
+`framework` bundles; the other three are in `framework`. See
+[tools/framework/README.md](framework/README.md) for the design and the
+verification status, and the `framework` and `coffea` skills for how an agent is
+expected to use them.
+
+#### InspectFileTool
+
+**Purpose**: Report what a NanoAOD-like ROOT file contains and what will need care when coffea reads it
+
+**Input Parameters:**
+- `root_path` (str): ROOT file, relative to `base_directory`
+- `tree_name` (str): TTree to inspect (default: `"Events"`)
+- `collection` (str, optional): Return every field of this collection
+- `branch_pattern` (str, optional): Shell-style pattern of branch names to list, e.g. `"HLT_*Mu*"`
+- `require` (list, optional): Branch or collection names that must exist
+- `max_fields` (int): Fields listed per collection in the overview (default: 12; 0 for all)
+- `list_all_branches` (bool): Also return every branch name (default: False)
+
+**Output:**
+```json
+{
+  "status": "ok",
+  "trees": {"Events": 4733, "Runs": 1},
+  "n_entries": 4733,
+  "collections": {"Muon": {"kind": "jagged", "n_fields": 103, "counter": "nMuon", "fields": ["..."]}},
+  "per_event_branches": ["run", "luminosityBlock", "event", "genWeight"],
+  "schema_notes": [
+    {"collection": "DSAMuon", "issue": "no_vector_behaviour", "detail": "..."},
+    {"collection": "GenPart", "issue": "duplicate_momenta", "detail": "..."}
+  ]
+}
+```
+
+`schema_notes` lists what changes how the file must be read, by `issue`:
+`no_vector_behaviour` (a collection with `pt`/`eta`/`phi` that coffea's
+`NanoAODSchema` does not know, read without vector behaviour),
+`duplicate_momenta` and `conflicting_coordinates` (a collection that stores its
+momentum twice, or has other fields coffea reads as a second set of
+coordinates), `missing_fields` (a collection coffea knows that lacks a field its
+behaviour needs) and `shadowed_branches` (a branch named exactly like a
+collection, which hides the collection). Each note says what to do about it.
+
+The events must be in a TTree. An RNTuple is reported as such (`Not A TTree`)
+and not described further.
+
+---
+
+#### ScaffoldAnalysisFrameworkTool
+
+**Purpose**: Write a coffea analysis framework for a new analysis. It writes files and reads at most the branch names of `sample_file`; whether the result runs is what `CheckAnalysisFrameworkTool` reports.
+
+**Input Parameters:**
+- `project_dir` (str): Directory to create, relative to `base_directory`
+- `sample_file` (str, optional): Representative ROOT file; objects, cuts and histograms are matched to it. It also becomes the first sample, unless `samples` is given
+- `tree_name` (str): TTree holding the events (default: `"Events"`); recorded in the package
+- `objects` (dict, optional): `{object name: collection}` to add to or override in the default objects, e.g. `{"dsaMuons": "DSAMuon"}`
+- `include_default_objects` (bool): Start from the standard objects found in the file (default: True)
+- `triggers` (list, optional): HLT paths ORed into a `"pass triggers"` event cut
+- `year` (optional): Run period of the samples
+- `lumi`, `golden_json` (optional): Luminosity of that period in /pb and its golden JSON; both need `year`
+- `samples` (list, optional): `[{"name", "files", "is_data", "xsec", "year", "skim_factor"}]`; `files` are complete paths, `root://` urls, or relative to `base_directory`
+- `components` (list, optional): Components to add right away (see `AddFrameworkComponentTool`)
+- `package_name`, `project_title`, `project_description`, `author`, `experiment`
+- `overwrite` (bool): Allow a directory that already has files in it; files the framework writes replace existing ones of the same name (default: False). A directory that already holds a framework is refused whatever this says
+
+**Output:**
+```json
+{
+  "status": "ok",
+  "project": "my_analysis",
+  "package": "my_analysis",
+  "tree": "Events",
+  "n_files_written": 34,
+  "files_replaced": [],
+  "objects": [{"name": "muons", "collection": "Muon", "kind": "jagged", "object_cuts": 8,
+               "wrapped_as_lorentz": false, "optional": false}],
+  "channels": ["all", "baseline", "baseline_2muons"],
+  "hist_collections": ["muon_base", "base"],
+  "components": [],
+  "components_failed": [],
+  "notes": ["..."],
+  "next_steps": ["..."]
+}
+```
+
+The engine written to `<package>/tools/` is the same for every analysis. What
+is generated per analysis is `definitions/` (objects, cuts, histograms), `configs/`
+(selections, histogram collections, samples) and a test notebook. The cuts,
+thresholds and selections it writes are placeholders so that something runs,
+not recommendations. A requested component that cannot be added is listed in
+`components_failed`; the framework is written all the same.
+
+The tool is called once per analysis. If it fails, whatever it had written is
+removed again. `notes` says, among other things, which standard collections
+were left out of the default objects because the file lacks a field coffea's
+behaviour for them needs.
+
+**Example:**
+```python
+from tools.framework.scaffold import ScaffoldAnalysisFrameworkTool
+
+tool = ScaffoldAnalysisFrameworkTool(
+    project_dir="my_analysis",
+    sample_file="data/signal.root",
+    objects={"dsaMuons": "DSAMuon"},
+    triggers=["HLT_IsoMu24"],
+    base_directory="./workspace"
+)
+```
+
+---
+
+#### AddFrameworkComponentTool
+
+**Purpose**: Add an optional component to a scaffolded framework
+
+**Input Parameters:**
+- `project_dir` (str): The framework's directory
+- `component` (str): `lepton_jets`, `scaleout`, `schema` or `chain_report`
+- `options` (dict, optional): Component options
+  - `lepton_jets`: `name`, `sources`, `radius`, `carry`, `isolation_jets`, `invmass_max`
+  - `schema`: `mixins`, `cross_references`, `nested_items`, `hidden_branches`, `constant_fields`, `hide_duplicate_momenta`, `reset`
+- `overwrite` (bool): Regenerate the component's files and blocks, discarding edits made inside them (default: False)
+
+**Output:**
+```json
+{
+  "status": "ok",
+  "component": "lepton_jets",
+  "files_written": ["my_analysis/tools/lepton_jets.py"],
+  "files_kept": [],
+  "blocks": {"my_analysis/definitions/objects.py": "added"},
+  "options": {"name": "ljs", "radius": 0.4, "...": "..."},
+  "notes": ["..."],
+  "next_steps": ["..."]
+}
+```
+
+A component copies its files and appends marked blocks
+(`# >>> component: NAME >>>` ... `# <<< component: NAME <<<`) to the definitions
+and configs. A call either completes or leaves the project as it was. Running
+it again with the same options changes nothing. `lepton_jets` with different
+options is refused unless `overwrite` is set, so that the tool does not leave
+kept blocks next to a record of other options; `options` in the answer are the
+ones the files and blocks were written from. Edits made by hand inside a block
+are not tracked.
+
+For `schema`, the tables at the top of the generated `tools/schema.py` are the
+record: they can be edited by hand, later calls add to them, and `reset` starts
+them afresh. If the file was edited elsewhere it is kept, and the answer says
+`"applied": false`, unless `overwrite` is set.
+
+---
+
+#### CheckAnalysisFrameworkTool
+
+**Purpose**: Run a scaffolded framework's self-check
+
+**Input Parameters:**
+- `project_dir` (str): The framework's directory
+- `sample` (str, optional): Configured sample to run on; static checks only if omitted
+- `tag`, `sample_config` (str, optional): Group of the sample, and name of the file under `configs/samples/` that defines it, when not the defaults
+- `sample_file` (str, optional): Or a ROOT file to run on, with `is_data` and `year`
+- `channels`, `hist_collections` (list, optional): What to run (default: all)
+- `max_events` (int): Roughly how many events to process (default: 2000)
+- `strict` (bool): Stop at the first failure (default: True)
+- `venv` (str, optional): Virtual environment to run with
+- `timeout_s` (int): Timeout in seconds (default: 50)
+
+**Output:**
+```json
+{
+  "status": "ok",
+  "ok": true,
+  "python": "/path/to/python",
+  "versions": {"coffea": "...", "awkward": "..."},
+  "static": {"errors": [], "warnings": [], "channels": ["all", "baseline"], "optional_objects": ["gens"]},
+  "run": {"ok": true, "datasets": {"Signal": {
+    "n_events": 2000,
+    "is_data": [false],
+    "year": ["2018"],
+    "scaled_sum_weights": 2000.0,
+    "lumixs_weight": null,
+    "cutflow": {"baseline": [["None", 2000, 2000.0], ["pass triggers", 1500, 1500.0]]},
+    "counters": {"baseline": {"Selected muons": 2710.0}},
+    "empty_hists": [],
+    "unavailable_objects": [],
+    "warnings": []
+  }}}
+}
+```
+
+`status` says that the check ran; `ok` says whether it found errors (warnings do
+not change it). When a run stops, `run.error` holds the chain of errors and
+`run.traceback` the end of the traceback. Weighted yields are scaled to
+lumi * cross section when `lumixs_weight` is a number, and are sums of
+generator weights when it is null. The check runs
+`python -m <package>.tools.check` in a subprocess, with the interpreter of
+`venv`, else the `analysis_python` config key
+(`tb config set --user heptapod analysis_python /path/to/python`), else the
+toolkit's own.
+
+The default timeout is below the 60 s toolbase gives a tool call by default.
+Longer checks need both a larger `timeout_s` and a server started with
+`tb serve --call-timeout SECONDS`; `examples/framework/launch.py` sets that up.

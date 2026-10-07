@@ -12,6 +12,7 @@ This script runs unit tests for:
 - PDG tools (particle properties, masses, widths, branching fractions)
 - INSPIRE tools (paper search, citations, author information)
 - Units tools (natural unit conversions, metric prefixes)
+- NanoAOD inspection and the analysis-framework tools (scaffold, components, check)
 
 Usage:
     python test_runner.py                # Run all tests
@@ -313,7 +314,7 @@ def main():
     )
     parser.add_argument(
         "--only",
-        choices=["prereqs", "conversions", "kinematics", "reconstruction", "delta_r_filter", "feynrules", "mg5", "pythia", "sherpa", "llm", "pdg", "inspire", "units", "nda", "eda", "feyngraph", "logging"],
+        choices=["prereqs", "conversions", "kinematics", "reconstruction", "delta_r_filter", "feynrules", "mg5", "pythia", "sherpa", "llm", "pdg", "inspire", "units", "nda", "eda", "feyngraph", "logging", "nanoaod_inspect", "framework"],
         help="Run only tests for specified component (prereqs = prerequisites check only)"
     )
     parser.add_argument(
@@ -417,6 +418,19 @@ def main():
         "logging": {
             "script": REPO_ROOT / "tools" / "logging" / "tests" / "test_findings.py",
             "description": "Logging tools (findings ledger)"
+        },
+        "nanoaod_inspect": {
+            "script": REPO_ROOT / "tools" / "analysis" / "test_nanoaod_inspect.py",
+            "description": "NanoAOD inspection (collections, schema notes, required branches)"
+        },
+        # test_framework_run.py needs coffea, awkward, uproot and hist (the
+        # framework bundle's deps) and skips its tests when they are missing.
+        "framework": {
+            "scripts": [
+                REPO_ROOT / "tools" / "framework" / "tests" / "test_framework.py",
+                REPO_ROOT / "tools" / "framework" / "tests" / "test_framework_run.py",
+            ],
+            "description": "Analysis framework tools (scaffold, components, check, generated frameworks)"
         },
     }
 

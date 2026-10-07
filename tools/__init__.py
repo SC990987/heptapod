@@ -21,6 +21,7 @@ for _name in (
     "eda",
     "feyngraph",
     "feynrules",
+    "framework",
     "inspire",
     "logging",
     "mg5",

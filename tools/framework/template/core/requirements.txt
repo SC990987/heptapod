@@ -1,0 +1,38 @@
+# Direct dependencies of the analysis. Install with:  pip install -r requirements.txt
+#
+# That is for a new environment. In one that already has coffea, pinned to a version
+# you chose, install only what is missing by name: this file would upgrade coffea to
+# the bound below, and its whole stack with it.
+#
+# coffea brings a matching awkward, uproot, hist, vector and numba with it, so only
+# coffea carries a lower bound: the engine relies on virtual arrays together with the
+# processor Runner/executors. Released versions have had both since 2025.7, and so
+# do the 2025.5 release candidates (to stay on one, pin it: coffea==2025.5.0rc2).
+#
+# Once the analysis is in use, freeze what you ran with:
+#     pip freeze --exclude-editable > constraints.txt
+#     pip install -r requirements.txt -c constraints.txt      (from then on)
+# Columnar stacks move quickly, and a new release of a package you never asked for
+# can change behaviour between two runs. One known case: numba 0.67.0 with llvmlite
+# 0.49.0 (August 2026) was seen to miscompile coffea's generator-particle navigation
+# (GenPart.children) with "LLVM IR parsing error: invalid cast opcode for cast from
+# 'i64' to 'ptr'". If you meet it, uncomment the next line.
+# numba<0.67
+coffea>=2025.7.0
+awkward
+uproot
+hist
+numpy
+PyYAML
+
+# plotting (notebooks only: the processor and batch jobs do not import these)
+matplotlib
+mplhep
+
+# notebooks
+# jupyterlab
+# ipykernel
+
+# reading files over xrootd (root://...); not needed for local files
+# fsspec-xrootd
+# xrootd

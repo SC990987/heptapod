@@ -35,6 +35,14 @@ config:
     description: Enable INSPIRE query caching.
     type: boolean
     default: false
+  - name: analysis_python
+    description: Python interpreter with coffea installed, used by the framework
+      bundle to run the self-check of a generated analysis framework. Optional;
+      defaults to the toolkit's own interpreter, which has the framework
+      bundle's dependencies. Set it to run checks in the analysis's own
+      environment instead (for example a virtual environment on a cluster).
+    type: path
+    required: false
 bundles:
   # ── lightweight / always-available ───────────────────────────────
   units: {}                              # pure python; nothing to install
@@ -45,6 +53,53 @@ bundles:
   # ── analysis stack ───────────────────────────────────────────────
   analysis:
     deps: [numpy>=2.3.5, tqdm>=4.67.0, pylhe>=1.0.2]
+
+  # ── coffea analysis environment ──────────────────────────────────
+  # Provides the environment and the `coffea` skill, which teaches the agent
+  # to write columnar analysis code directly against coffea: the NanoEvents
+  # object model and attribute access, PackedSelection cutflows, Weights and
+  # systematics, LumiMask, correctionlib scale factors, and hist. coffea
+  # already implements the physics; wrapping each of its functions in a tool
+  # would only add a narrower interface to maintain. The one tool is
+  # InspectFileTool, which reports what a NanoAOD-like file contains.
+  coffea:
+    deps:
+      - coffea>=2025.7.0
+      - awkward>=2.8.0
+      - uproot>=5.3.0
+      - vector>=1.6.3
+      - hist>=2.9.0
+      - numpy>=2.2.0
+      - correctionlib>=2.6.0
+      - pyyaml>=6.0
+      # numba 0.67.0 with llvmlite 0.49.0 (2026-08-11) was found to miscompile
+      # coffea's GenPart.children kernel ("LLVM IR parsing error: invalid cast
+      # opcode for cast from 'i64' to 'ptr'"), which breaks generator-level
+      # navigation. Drop the bound once a newer numba is checked against it.
+      - numba<0.67
+
+  # ── analysis frameworks ──────────────────────────────────────────
+  # Writes a coffea analysis framework for a new analysis: an
+  # analysis-independent engine (processor, selections, histograms, cutflows)
+  # plus starting definitions and configs matched to the user's files, with
+  # optional components added on request (lepton jets, scale-out, a custom
+  # NanoAOD schema, a regression report with CI). The `framework` skill
+  # teaches the agent to fill in the physics and extend it. The scaffolding
+  # itself is pure python; the dependencies below are what the generated
+  # framework needs, so that its self-check can run in the toolkit's own
+  # environment (fastjet and vector are for the lepton-jet component).
+  # What has and has not been run is listed in tools/framework/README.md.
+  framework:
+    deps:
+      - coffea>=2025.7.0
+      - awkward>=2.8.0
+      - uproot>=5.3.0
+      - vector>=1.6.3
+      - hist>=2.9.0
+      - numpy>=2.2.0
+      - pyyaml>=6.0
+      - fastjet>=3.4.3.1
+      - numba<0.67                     # see the coffea bundle
 
   # ── BSM / SUSY spectrum setup ────────────────────────────────────
   # Pure python (no external HEP software): parse benchmark-point spectra
@@ -172,6 +227,13 @@ tools:
     description: Build a Pythia-readable decay-table fragment to decay a BSM state the
       LHE left stable (e.g. GMSB neutralino -> photon + gravitino).
     bundle: bsm
+  - module: tools.analysis.nanoaod_inspect
+    name: InspectFileTool
+    description: Inspect a NanoAOD-like ROOT file - trees, collections and branches,
+      and what will need care when it is read with coffea (collections without vector
+      behaviour, momenta stored twice, fields a behaviour needs that are missing).
+      Run first on any unfamiliar file.
+    bundle: [coffea, framework]
   - module: tools.eda.compute_symbolic_amplitude_tool
     name: ComputeSymbolicAmplitude
     description: Generate FeynCalc code with symbolic masses and couplings.
@@ -215,6 +277,25 @@ tools:
     description: Generate a UFO model directory from a FeynRules .fr model file
       by calling Mathematica's `wolframscript`.
     bundle: feynrules
+  - module: tools.framework.scaffold
+    name: ScaffoldAnalysisFrameworkTool
+    description: Write a coffea analysis framework for a new analysis (engine, starting
+      objects/cuts/histograms/selections, samples, test notebook), matched to a
+      representative ROOT file when one is given. Called once per analysis; check the
+      result with CheckAnalysisFramework.
+    bundle: framework
+  - module: tools.framework.components
+    name: AddFrameworkComponentTool
+    description: Add an optional component to a scaffolded analysis framework - lepton
+      jets, scale-out (dask / LPC HTCondor), a customised NanoAOD schema, or a
+      regression report with a GitHub workflow.
+    bundle: framework
+  - module: tools.framework.check
+    name: CheckAnalysisFrameworkTool
+    description: Run a scaffolded analysis framework's self-check - static consistency
+      of configs and definitions, and optionally a short run that returns cutflows,
+      empty histograms and every warning the processor recorded.
+    bundle: framework
   - module: tools.inspire.inspire_tools
     name: InspireAuthorTool
     description: Get information about a physicist and their publication

@@ -1,0 +1,13 @@
+# Small files the chain report runs over. Add entries with tests/make_fixture.py.
+#
+# fixtures:
+#   - dataset: MySignal          # name the file is processed as (cross section lookup)
+#     file: data/MySignal_200ev.root   # relative to tests/, or a complete path
+#     is_data: false
+#     year: "2018"
+#     skim_factor: 0.5           # not 1, so that a mistake in its use shows up
+#
+# chunksize: events per chunk. Keep it below the fixture size, so that every file is
+# processed in several chunks.
+fixtures: []
+chunksize: 100

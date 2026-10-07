@@ -96,6 +96,7 @@ Each example ships a launcher that runs the whole setup above (sandbox, system p
 python examples/nda/launch.py --harness claude-code            # or codex, opencode
 python examples/eda/launch.py --harness codex
 python examples/sim/s1_lq_rr/launch.py --harness claude-code   # brings the MC run cards
+python examples/framework/launch.py --harness claude-code      # writes a coffea analysis framework
 ```
 
 Each sandbox is its own toolbase project, so the bundles it activates don't touch your global config. See the per-example READMEs for what each covers.
@@ -130,6 +131,8 @@ HEPTAPOD's capabilities span:
 - **Particle data**, **literature search**, and **unit conversions** (`pdg`, `inspire`, `units`)
 - **Monte Carlo event generation** with MadGraph, Pythia, and Sherpa (`mg5`, `event_gen`)
 - **Event analysis**: cutflows, kinematics, reconstruction, yield normalization (`analysis`)
+- **Columnar NanoAOD analysis** written directly against coffea (`coffea`)
+- **Analysis frameworks**: a coffea analysis package written for a new analysis, extended on request with lepton jets, scale-out, a custom NanoAOD schema, or a regression report with CI (`framework`)
 - **BSM spectrum setup**: benchmark-point parsing and decay-table construction (`bsm`)
 - **Reproducible, auditable execution traces** via run cards and structured outputs
 
@@ -142,6 +145,8 @@ Tools are grouped into **bundles**, so you install only what a workflow needs. B
 | `pdg` | Particle Data Group lookups | `pdg` pip pkg |
 | `analysis` | Cutflows, kinematics, reconstruction, JSONL/NumPy conversions, yield normalization, recast linting | numpy, tqdm, pylhe |
 | `bsm` | SUSY benchmark-point spectrum parsing; Pythia decay-table construction | none (pure python) |
+| `coffea` | NanoAOD file inspection; the environment and skill for writing columnar analysis with coffea | coffea, awkward, uproot, hist, vector, correctionlib |
+| `framework` | Scaffold, extend and check a coffea analysis framework for a new analysis | coffea, awkward, uproot, hist, vector, fastjet |
 | `event_gen` | MadGraph → Pythia/Sherpa event-generation pipeline | pythia8mc, sherpa-mc, pylhe |
 | `mg5` | MadGraph5 run-card generation + fast process validation | `mg5_path` |
 | `nda` | Feynman-diagram enumeration + Naive Dimensional Analysis | feyngraph |
@@ -160,8 +165,10 @@ Some bundles ship a **skill** — a written guide to using their tools well, cov
 |-------|--------|--------|
 | `feynrules` | Declaring mass and width once, tagging BSM couplings with an interaction order, checking the UFO before MG5 sees it | `feynrules` |
 | `mg5` | Shallow comma decay chains and the `NP=N` alternative, `compute_widths` ordering, reading past MG5's auto-conversion error mask | `mg5` |
+| `coffea` | Writing columnar analysis directly against coffea: the NanoEvents object model and attribute access, cutflows, weights, corrections, histograms | `coffea` |
+| `framework` | Building an analysis in a scaffolded framework: where objects, cuts, histograms and selections go, the optional components, and what to do when a check fails | `framework` |
 
-Each skill names a bundle, and `tb connect` surfaces it only when that bundle's tools are actually being served — so the `mg5` guide stays hidden until `mg5_path` is set, since without it the tools it describes aren't there either. `tb deactivate heptapod__mg5` turns one off; `tb activate` turns it back on.
+Each skill names a bundle, and `tb connect` surfaces it only when that bundle's tools are actually being served — so the `mg5` guide stays hidden until `mg5_path` is set, since without it the tools it describes aren't there either. `tb deactivate heptapod__mg5` turns one off; `tb activate` turns it back on. The `coffea` and `framework` bundles need no such setting, so their skills are surfaced wherever those bundles are installed, including in projects that did not activate their tools; `tb deactivate heptapod__framework` hides one there.
 
 How a skill reaches the agent depends on the harness:
 
@@ -214,7 +221,7 @@ For local, key-free inference, install [Ollama](https://ollama.com/download) and
 
 ## External Dependencies
 
-Most bundles (`units`, `inspire`, `pdg`, `nda`, `analysis`, `bsm`) work out of the box; toolbase installs their pip dependencies automatically. The following bundles expect additional software on the system:
+Most bundles (`units`, `inspire`, `pdg`, `nda`, `analysis`, `bsm`) work out of the box; toolbase installs their pip dependencies automatically. `coffea` and `framework` likewise need nothing beyond pip packages that toolbase installs. The `framework` bundle is new and has not yet been run against those packages: [tools/framework/README.md](tools/framework/README.md#verification-status) lists what was and was not checked, and how to check it. The following bundles expect additional software on the system:
 
 #### Mathematica and WolframScript (`eda`, `feynrules`)
 
@@ -268,6 +275,9 @@ Once toolbase is connected (or an Orchestral demo is running), interact with the
 
 **Monte Carlo event generation:**
 > Generate 10,000 $pp \to tt$ events at 13 TeV using MadGraph, shower with Pythia, and plot the invariant mass distribution.
+
+**Analysis frameworks:**
+> Set up an analysis framework for the NanoAOD file in `data/`: muons, electrons, jets and MET, with a channel requiring two opposite-charge muons, and histograms of the dimuon mass. Run the check and show me the cutflow.
 
 For detailed tool documentation, see [tools/README.md](tools/README.md).
 
