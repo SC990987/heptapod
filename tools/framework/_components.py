@@ -189,6 +189,25 @@ def _lepton_jet_sources(available: List[str], marker: Dict[str, Any],
     return checked
 
 
+def _same_particle_sources(sources: Dict[str, Any], marker: Dict[str, Any]) -> List[List[str]]:
+    """Groups of sources read from collections of the same kind of particle.
+
+    A particle stored in two of them (a muon that is both a PF and a DSA muon) is
+    clustered twice. Only objects whose collection the project records are compared.
+    """
+    objects = marker.get("objects") if isinstance(marker.get("objects"), dict) else {}
+    kinds: Dict[str, List[str]] = {}
+    for name in sources:
+        collection = objects.get(name)
+        if not isinstance(collection, str):
+            continue
+        for kind in ("muon", "electron", "photon"):
+            if kind in collection.lower():
+                kinds.setdefault(kind, []).append(f"{name} ({collection})")
+                break
+    return [names for names in kinds.values() if len(names) > 1]
+
+
 def _lepton_jet_carry(carry: Any) -> Dict[str, Any]:
     shape = "carry must be {field: fill value} or a list of field names"
     if isinstance(carry, str):
@@ -447,6 +466,13 @@ hist_defs.update({{
         result["notes"].append(
             f"{late} are derived objects: objects are built from top to bottom, so they must "
             "be defined above the lepton_jets block in definitions/objects.py")
+    for names in _same_particle_sources(sources, marker):
+        result["notes"].append(
+            f"the sources {', '.join(names)} can hold the same particle: one stored in both "
+            "is clustered twice, which shifts the lepton jets' momenta and masses. Before "
+            "relying on the lepton jets, remove from one what the other holds with an object "
+            "cut that the lepton-jet channels list (the framework skill's components "
+            "reference shows one)")
     result["notes"].append("the lepton-jet cut values and the selection are starting values, "
                            "not this analysis's: replace them")
     result["next_steps"] = [

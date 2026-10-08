@@ -62,6 +62,57 @@ A source or isolation jet may be a derived object, if it is defined **above** th
 component's block in `objects.py` (the block is appended at the end, so it normally
 is); the answer's notes say so when it applies.
 
+**No particle may be in two sources.** Every source is clustered as it is, so a
+particle stored in two collections enters its lepton jet twice, and the lepton jet's
+momentum and mass with it. In LLP NanoAOD most muons are both a PF muon (`Muon`) and a
+displaced standalone muon (`DSAMuon`): in a cms-sidm signal file (a 500 GeV resonance
+to two dark photons), 82% of the PF muons with pT > 10 GeV and |eta| < 2.4 had a DSA
+muon with the same cuts within dR < 0.05, and with `muons, dsaMuons, electrons,
+photons` as sources the mass of the two leading lepton jets peaked at 705 GeV instead
+of near 500 (505 GeV with the default sources). The default sources are the objects
+read from `Muon`, `Electron` and `Photon`, so DSA muons are clustered only when named.
+When the analysis wants both kinds of muon, remove from the second what the first
+holds before clustering, with an object cut on it that every channel building lepton
+jets lists:
+
+```python
+# PKG/definitions/cuts.py: DSA muons that are not one of the selected PF muons again
+from PKG.tools.utilities import dR
+
+obj_cut_defs["dsaMuons"]["no PF muon within dR 0.05"] = (
+    lambda objs, obj: dR(obj, objs["muons"]) > 0.05)
+```
+
+```yaml
+# PKG/configs/selections.yaml: in the shared block, which the channels merge
+_object_cuts: &object_cuts
+  # ... the other objects, as they are ...
+  dsaMuons: &dsaMuons_base
+    - "pT > 10 GeV"
+    - "|eta| < 2.4"
+    - "no PF muon within dR 0.05"
+```
+
+A channel without object cuts, like the scaffold's `all`, still clusters every muon
+of both collections.
+
+- `objs["muons"]` holds the *selected* PF muons only if `muons` is defined above
+  `dsaMuons` in `objects.py`, as the scaffold writes them (see "Add an object cut" in
+  the how-to). Cleaning against the selected ones keeps a DSA muon whose PF copy was
+  cut away, so that the muon is still clustered once.
+- The radius is the analysis's choice, not a default: one that is too large also
+  removes a different muon close to a PF muon, which in a collimated pair is its
+  partner. Matching by the muon-system segments the two reconstructions share is
+  more precise where the file records it (LLP NanoAOD: `DSAMuon_muonMatch1..5`, the
+  number of segments shared with the PF muon at `DSAMuon_muonMatch1..5idx`).
+  cms-sidm/SIDM drops a DSA muon that shares segments with a selected PF muon, with
+  conditions on the fraction of its segments that are shared and on the distance
+  between the outer tracks.
+- Electrons and photons can overlap the same way: an electron's deposit can also be
+  stored as a photon (NanoAOD: `Photon_electronIdx`, `Photon_pixelSeed`). cms-sidm/SIDM
+  keeps only photons without a pixel seed and with no electron within dR 0.025.
+- The answer's notes point it out when two sources hold the same kind of particle.
+
 What it adds:
 
 - `tools/lepton_jets.py` with `build_lepton_jets`, `source_objects`, `leading_pair_dphi`;

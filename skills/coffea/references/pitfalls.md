@@ -154,6 +154,31 @@ dsa = as_vectors(events.DSAMuon, keep=("charge", "dxy"))
 dsa.nearest(events.Muon, return_metric=True)      # now works
 ```
 
+## The same particle can be in two collections
+
+Collections are not exclusive. In LLP NanoAOD most muons are reconstructed twice, as a
+PF muon (`Muon`) and as a displaced standalone muon (`DSAMuon`): in a cms-sidm signal
+file, 82% of the PF muons with pT > 10 GeV and |eta| < 2.4 had a DSA muon with the same
+cuts within Delta R < 0.05 (median 0.011). Anything that combines the two collections
+(objects clustered from both, a mass or a count over both) takes such a muon twice:
+lepton jets clustered from PF and DSA muons, electrons and photons put the mass of the
+two leading lepton jets at 705 GeV for a 500 GeV resonance, against 505 GeV without
+the DSA muons. Take out of one collection what the other already holds, first:
+
+```python
+# dsa: the DSA muons as vectors (above); sel_mu: the PF muons the analysis keeps
+_, dr = dsa.nearest(sel_mu, return_metric=True)
+dsa_only = dsa[ak.fill_none(dr > 0.05, True)]      # no kept PF muon within 0.05
+```
+
+The radius is a choice, not a convention: too large a one also takes out a different
+muon next to a PF muon (in a collimated pair, its partner). Where the production
+stores the muon-system segments the two share (LLP NanoAOD: `DSAMuon_muonMatch1..5`,
+the number shared with the PF muon at `DSAMuon_muonMatch1..5idx`), those say directly
+which DSA muon is a PF muon again; cms-sidm/SIDM cleans with them. Electrons and
+photons overlap the same way: an electron's deposit can also be stored as a photon
+(`Photon_electronIdx`, `Photon_pixelSeed`).
+
 ## Cartesian and polar in the same collection breaks the vector behaviour
 
 If a collection carries **both** `px,py,pz` and `pt,eta,phi`, coffea refuses it:
@@ -168,11 +193,10 @@ access** (`events.GenPart.pdgId`), not at open time.
 
 The cleanest fix is to not read the duplicate: a schema that hides
 `GenPart_px/py/pz` leaves a normal `GenPart` with all of its navigation intact.
-The `framework` skill's `AnalysisSchema` is written to do this for every
-collection that has a vector behaviour and stores both sets; unlike the rest of
-this page, that schema has not been confirmed by running it. The route that was
-confirmed is to drop that collection's mixin and re-zip with polar coordinates
-only:
+The `framework` skill's `AnalysisSchema` does this for every collection that has a
+vector behaviour and stores both sets; it has done so on an LLPnanoAOD file with
+coffea 2026.9.0. The other route, also confirmed, is to drop that collection's mixin
+and re-zip with polar coordinates only:
 
 ```python
 class LLPNanoAODSchema(NanoAODSchema):

@@ -634,6 +634,8 @@ def test_every_component_applies_cleanly_and_twice():
         for name in components.COMPONENTS:
             first = components.apply_component(project, name)
             assert first["component"] == name and first["package"] == "demo_analysis"
+            # the default lepton-jet sources hold no particle twice, and nothing says they might
+            assert not any("same particle" in note for note in first["notes"]), first["notes"]
             assert first["files_written"] or first["blocks"], name
             again = components.apply_component(project, name)
             assert not again["files_written"], (name, again["files_written"])
@@ -669,6 +671,10 @@ def test_lepton_jet_blocks_agree_with_each_other():
              "isolation_jets": None, "name": "ljs"})
         assert result["options"]["sources"]["dsaMuons"] == {"mass": 0.105658}
         assert result["channel"] == "baseline_2ljs" and result["hist_collection"] == "lj_base"
+        # PF and DSA muons can be the same muon twice: the answer says so, about them alone
+        overlap = [note for note in result["notes"] if "same particle" in note]
+        assert len(overlap) == 1, result["notes"]
+        assert "muons (Muon), dsaMuons (DSAMuon)" in overlap[0] and "electrons" not in overlap[0]
         package = project / "demo_analysis"
         objects = (package / "definitions" / "objects.py").read_text()
         assert 'LJS_SOURCES = {"muons": {}, "dsaMuons": {"mass": 0.105658}, "electrons": {}}' in objects
@@ -1129,6 +1135,27 @@ def _tools():
             build_command, condense)
 
 
+def _answer(tool, **kwargs):
+    """A call with arguments of the wrong type: (what comes back, refused by the types?).
+
+    Orchestral checks the arguments against the declared field types before the tool
+    runs (pydantic, which converts what it can: "no" becomes false, true becomes 1)
+    and refuses the rest there. Where nothing checks them, the tool's own checks do.
+    """
+    try:
+        instance = tool(**kwargs)
+    except Exception as exc:
+        if type(exc).__name__ != "ValidationError":
+            raise
+        return str(exc), True
+    return instance._run(), False
+
+
+def _names_argument(message, field):
+    """Whether pydantic's refusal is about this argument (its own line, or field.<part>)."""
+    return re.search(rf"^{re.escape(field)}(\.|$)", message, flags=re.M) is not None
+
+
 def test_scaffold_and_component_tools():
     scaffold_tool, component_tool, _, _, _ = _tools()
     with tempfile.TemporaryDirectory() as tmp:
@@ -1189,12 +1216,16 @@ def test_scaffold_and_component_tools():
         assert any("Wildcards are not expanded" in note for note in out["notes"])
         text = (Path(tmp) / "g" / "g" / "configs" / "samples" / "samples.yaml").read_text()
         assert os.path.join(os.path.expanduser("~"), "somewhere", "x.root") in text
-        # requests of the wrong shape are answered, not raised
+        # requests of the wrong shape are refused, saying which argument is wrong: by the
+        # field types where Orchestral checks them, by the tool otherwise
         for kwargs, expected in (({"samples": 5}, "samples must be a list"),
                                  ({"triggers": 5}, "triggers must be a list"),
                                  ({"lumi": "much", "year": "2018"}, "lumi must be a positive number")):
-            refused = scaffold_tool(base_directory=tmp, project_dir="h", **kwargs)._run()
-            assert "Invalid Request" in refused and expected in refused, refused
+            refused, by_types = _answer(scaffold_tool, base_directory=tmp, project_dir="h", **kwargs)
+            if by_types:
+                assert _names_argument(refused, next(iter(kwargs))), refused
+            else:
+                assert "Invalid Request" in refused and expected in refused, refused
             assert not (Path(tmp) / "h").exists()
 
         added = json.loads(component_tool(base_directory=tmp, project_dir="ana",
@@ -1361,18 +1392,21 @@ def test_check_tool_requests_and_report_handling():
         for name in ("--file", "../x.yaml", "/abs/x.yaml", "sub/x.yaml", ".."):
             out = check_tool(base_directory=tmp, project_dir="ana", sample="S", sample_config=name)._run()
             assert "Invalid Request" in out and "not a path" in out, (name, out)
-        # values of the wrong kind are a mistake in the request, and are said to be
+        # values of the wrong type are a mistake in the request, and are said to be: by
+        # the field types where Orchestral checks them, by the tool otherwise
         for kwargs, expected in (({"max_events": "many"}, "max_events must be a whole number"),
-                                 ({"max_events": True}, "max_events must be a whole number"),
                                  ({"timeout_s": None}, "timeout_s must be a whole number"),
                                  ({"sample": 5}, "sample must be a list of names"),
                                  ({"sample": ["S", ["T"]]}, "sample must be a list of names"),
                                  ({"channels": [["a"]]}, "channels must be a list of names"),
                                  ({"hist_collections": 3}, "hist_collections must be a list"),
                                  ({"year": 20.18}, "year must be"),
-                                 ({"strict": "no"}, "strict must be true or false")):
-            out = check_tool(base_directory=tmp, project_dir="ana", **kwargs)._run()
-            assert "Invalid Request" in out and expected in out, (kwargs, out)
+                                 ({"strict": "maybe"}, "strict must be true or false")):
+            out, by_types = _answer(check_tool, base_directory=tmp, project_dir="ana", **kwargs)
+            if by_types:
+                assert _names_argument(out, next(iter(kwargs))), (kwargs, out)
+            else:
+                assert "Invalid Request" in out and expected in out, (kwargs, out)
         leftovers = set(os.listdir(tempfile.gettempdir()))
         # a single name is a list of one name, not of its letters
         out = check_tool(base_directory=tmp, project_dir="ana", channels="baseline",

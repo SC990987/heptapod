@@ -303,9 +303,9 @@ class CheckAnalysisFrameworkTool(BaseTool):
         sample_file: Or a ROOT file to run on, relative to the working directory.
         is_data: Whether sample_file is data (default: decided from the file).
         year: Run period of sample_file.
-        channels: Channels to run (default: every channel).
-        hist_collections: Histogram collections to fill (default: every collection;
-            [] for none).
+        channels: Channel to run, or a list of them (default: every channel).
+        hist_collections: Histogram collection to fill, or a list of them (default:
+            every collection; [] for none).
         max_events: Roughly how many events to process (default 2000). coffea evens
             out chunk sizes, so the one chunk that is read can be up to half as large
             again.
@@ -338,8 +338,9 @@ class CheckAnalysisFrameworkTool(BaseTool):
 
     Errors:
         A formatted error if project_dir is not a framework, a path leaves the
-        working directory, a name starts with "-" or a value is of the wrong kind, the
-        interpreter lacks the libraries, or the check times out.
+        working directory, a name starts with "-", the interpreter lacks the
+        libraries, or the check times out. An argument of the wrong type is refused
+        with a message that names it.
     """
 
     # --------------------------- Runtime fields --------------------------- #
@@ -357,10 +358,11 @@ class CheckAnalysisFrameworkTool(BaseTool):
     is_data: Optional[bool] = RuntimeField(
         default=None, description="Whether sample_file is data (default: decided from the file)")
     year: Optional[Union[str, int]] = RuntimeField(default=None, description="Run period of sample_file")
-    channels: Optional[List[str]] = RuntimeField(
-        default=None, description="Channels to run (default: every channel)")
-    hist_collections: Optional[List[str]] = RuntimeField(
-        default=None, description="Histogram collections to fill (default: every collection)")
+    channels: Optional[Union[str, List[str]]] = RuntimeField(
+        default=None, description="Channel to run, or a list of them (default: every channel)")
+    hist_collections: Optional[Union[str, List[str]]] = RuntimeField(
+        default=None,
+        description="Histogram collection to fill, or a list of them (default: every collection)")
     max_events: int = RuntimeField(default=2000, description="Events to process in the run")
     strict: bool = RuntimeField(
         default=True, description="Stop at the first failure (false: warn and carry on)")

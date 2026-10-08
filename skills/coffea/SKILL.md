@@ -125,3 +125,6 @@ skill is then how you write the expressions that go into it.
 * `ak.sum(ak.num(coll))` for the total object count.
 * For anything option-typed (`nearest`, `matched_*`), count the `None`s:
   `ak.sum(ak.is_none(x, axis=1))`.
+* Before combining two collections (PF and DSA muons, electrons and photons), count
+  how many objects of one have a partner in the other within a small Delta R: the
+  same particle is often in both (`references/pitfalls.md`).

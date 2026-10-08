@@ -222,6 +222,17 @@ The object was built and holds nothing. Before reporting that as a result:
   themselves ("Look inside a sample" in `howto.md`), or say plainly that the zero is
   unexplained: do not present it as a measured rate.
 
+## A mass or a pT comes out too high
+
+An object built from several collections counts twice a particle that is stored in
+two of them: lepton jets clustered from PF and DSA muons, or from an electron and a
+photon that are the same deposit; a sum over leptons of both kinds. In a cms-sidm
+signal file the two leading lepton jets of a 500 GeV resonance came out at 705 GeV
+when DSA muons were a source next to the PF muons, and at 505 GeV without them.
+Count how many objects of one collection have a partner in the other within a small
+dR before combining them, and clean one against the other (`components.md`,
+`lepton_jets`).
+
 ## Weighted yields look wrong
 
 - `not scaled to lumi * xs (KeyError: no cross section for ...)`: add the sample to

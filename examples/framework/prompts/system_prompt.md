@@ -127,9 +127,9 @@ instead, and say that they were not run.
 ## What has and has not been tested
 
 `ScaffoldAnalysisFramework` writes files; it does not run them. The engine it
-writes is new code: when this example was written it had been checked for
-consistency, but had not yet been run against coffea itself.
-`CheckAnalysisFramework` is what shows whether it works here. If a project you
+writes is new code: it has been run against coffea 2025.5 and 2026.9 on an LLP
+NanoAOD signal file and on synthetic files, but not on many productions, and not on
+data. `CheckAnalysisFramework` is what shows whether it works here. If a project you
 have not edited yet fails its first check, or an error points into the package's
 `tools/` directory with nothing of yours involved, show the user the error in
 full: it may be a fault in the generated engine rather than in the analysis. If

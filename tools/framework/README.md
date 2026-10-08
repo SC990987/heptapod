@@ -153,17 +153,59 @@ Changed, to make it independent of one analysis:
 
 ## Verification status
 
-**Nothing in this bundle has been run against coffea, awkward, uproot, hist, fastjet,
-dask, orchestral or toolbase.** It was written in an environment where none of them
-could be installed. What follows separates what was checked from what was not.
+The bundle was written where none of coffea, awkward, uproot, hist, fastjet, dask,
+orchestral or toolbase could be installed. It was first run at the Fermilab LPC on
+7 and 8 October 2026, at commit 119d31b, in two environments:
 
-### Checked
+| | A: the toolkit's own | B: an existing analysis environment |
+|---|---|---|
+| Set up with | `tb install . --bundle framework --bundle coffea` (toolbase 0.16.0) | CMSSW_17_0_0_pre4's python with the packages of a cms-sidm/SIDM install |
+| Python | 3.12.14 | 3.12.4 |
+| coffea, awkward, uproot, hist | 2026.9.0, 2.14.0, 5.7.7, 2.12.0 | 2025.5.0rc2, 2.8.7, 5.7.5, 2.9.0 |
+| numba, fastjet | 0.66.0, 3.5.2.0 | 0.65.1, 3.4.3.1 |
+| orchestral, pydantic | 1.10.1, 2.13.5 | not installed |
+| dask, distributed | 2026.8.0, installed for the dask test | 2025.3.0 |
+
+### Run at the LPC
+
+| What | Result |
+|------|--------|
+| `tests/test_framework_run.py` (22 tests) | passed in A (the dask test once dask was installed) and in B (21, with the dask test skipped) |
+| `tools/analysis/test_nanoaod_inspect.py` (15 tests) | passed (A) |
+| `tests/test_framework.py` (33 tests) | 31 passed (A). The two that failed expected the tools' own answer to arguments of the wrong type, which Orchestral validates against the field declarations before a tool runs: it refused them there, or converted them (`true` to 1, `"no"` to false). Fixed since, see below |
+| `tools/analysis/test_coffea_skill_docs.py` (5 tests) | passed (A) |
+| `tb install` and `tb validate` | heptapod installed in venv mode; the toolkit valid, 60 tools |
+| `InspectFile`, the scaffold, the `lepton_jets` component and the check, called directly in python, on `CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3_part-0.root` (2272 events) | all answered `status: ok`, the check `ok: true`. The generated project's own check (`python -m llp.tools.check`) gave the same report, field by field, in A and B |
+| The mass of the two leading lepton jets on that file, a 500 GeV resonance decaying to two dark photons | peaked at 505 GeV with the default sources (muons, electrons, photons). With DSA muons added as a source it peaked at 705 GeV: most muons in that file are both a PF and a DSA muon, and were clustered twice (see the `lepton_jets` section of the skill's components reference) |
+| Six requests to extend that framework, carried out by following the `framework` skill: a leading-electron histogram, a tighter electron cut in a new channel, a jet veto, jets cleaned of muons, generator-matched muons, a flat muon scale factor | the check passed before and after each, with edits only in `definitions/` and `configs/` |
+| The how-to's "Run it", "Look inside a sample" and "Plot it" on that project (`run_analysis` from a project that is not installed, `plot_samples`, `plot`, `add_label`, `plot_ratio`) | ran, except that the command of "Plot it" did not fill two of the histograms its python lines read. Fixed since, see below |
+| `examples/framework/launch.py --harness claude-code --no-launch` | wrote the sandbox: `CLAUDE.md`, both skills, `.mcp.json` with `--call-timeout 600`, and warmed the import cache |
+| `test_runner.py --skip-slow --skip-prereq`, at that commit and at 705b03c, before the bundle | every suite the two have in common gave the same result |
+
+Changed since that run, and checked here only:
+
+- `CheckAnalysisFramework` takes one name as a string for `channels` and
+  `hist_collections`, as it already did for `sample`; Orchestral refused a string for
+  those two before. `tests/test_framework.py` accepts a refusal of an argument of the
+  wrong type by Orchestral's validation as well as by the tool, and no longer tries
+  values that Orchestral converts rather than refuses.
+- The command of the how-to's "Plot it" now fills every histogram its python lines
+  read (`--channels baseline baseline_2muons --hists electron_base muon_base`),
+  checked against the stand-ins.
+- The README example below no longer adds DSA muons to the lepton-jet sources. The
+  skills say that no particle may be in two sources and how to clean one collection
+  against another, and the `lepton_jets` component points it out in its notes when two
+  sources hold the same kind of particle.
+- The how-to's jet veto says that NanoAOD jets contain the leptons: the veto tried at
+  the LPC removed every event of `baseline_2muons`, whose muons were inside jets.
+
+### Checked where the libraries could not be installed
 
 | What | How |
 |------|-----|
 | Every python file here and every file a scaffold produces compiles | byte-compiled on Python 3.11, 3.12 and 3.13; generated files also parse as Python 3.9 syntax; `ruff` rules E, F and W with the line-length rule (E501) switched off |
 | `toolkit.yaml` is well-formed and every module file it names exists | toolbase's `validate_toolkit`, called from the toolbase 0.16.0 source. It does not import the tool modules. |
-| Scaffolding, components, block editing, undoing of failed writes, detection of names in use, validation of names and values, request handling of the three tools, the launcher's editing of harness configs | `tests/test_framework.py` (33 tests) and `tools/analysis/test_nanoaod_inspect.py` (15 tests, one of which needs uproot and was skipped), with a stand-in for `orchestral.tools.base` |
+| Scaffolding, components, block editing, undoing of failed writes, detection of names in use, validation of names and values, request handling of the three tools, the launcher's editing of harness configs | `tests/test_framework.py` (33 tests) and `tools/analysis/test_nanoaod_inspect.py` (15 tests, one of which needs uproot and was skipped), with stand-ins for `orchestral.tools.base`: since the LPC run, one built like Orchestral's `BaseTool` (a pydantic model, pydantic 2.13.5, that validates its fields on construction and assignment), which gives the same answers to the arguments of the wrong type that the LPC run tried |
 | Generated projects: no placeholder left, configs parse as yaml, every name used in a config is defined, notebooks are valid JSON whose code cells compile | same tests |
 | The scaffold on the layout of a real LLP-NanoAOD file: 2009 branches, forming 56 collections (32 lists of objects, 24 one-per-event) and 23 single branches | scaffolded from the branch list of `CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3_part-0.root`, extracted without uproot. Only the branch *names* were used. |
 | The fixture writer's grouping of branches into collections | run on the branch lists of that file and of a 2018 data file (which has `nProton_multiRP`), and compared with the counter each branch names in its leaf title: no disagreement in 836 and 773 jagged branches |
@@ -175,54 +217,33 @@ Three reviews of the code against those sources found defects that no test here 
 have shown, and they were fixed without being run: the metadata cache, the
 classification of errors under `skipbadfiles`, float index branches, `follow` on
 collections that were cut or re-ordered, the fixture writer on data, and the pairing of
-histogram axes among them. Treat every one of those fixes as unverified until the
-tests below have passed.
+histogram axes among them. `tests/test_framework_run.py`, which exercises them, has
+since passed at the LPC.
 
-### Never executed
+### Not run yet
 
-- **All of `tests/test_framework_run.py`** (22 tests). In particular:
-  - any real `Runner` call, with any executor, and `metadata_cache={}` on it;
-  - `utilities.as_lorentz`, `dR`, `matched`, `lxy` on real arrays;
-  - `AnalysisSchema` hiding `GenPart_px/py/pz` on a real file, and its wrapper
-    around coffea's `local2global` (float and integer index branches);
-  - `histogram.Histogram.fill`: `ak.broadcast_arrays` over the weight and the axes,
-    on real jagged and option-type arrays;
-  - `selection.JaggedSelection` when a cut returns None for whole events;
-  - `Cutflow` and the output dictionary going through coffea's accumulation;
-  - `LumiMask` on data, and a golden JSON that cannot be read;
-  - `utilities.is_io_error` on an error that really came from uproot or XRootD (the
-    test builds one with the right call stack by hand), and how `skipbadfiles`
-    treats the engine's errors in each coffea version;
-  - the lepton-jet component: fastjet clustering, `_take`, `source_objects`, isolation;
-  - the schema component: `follow` (from cut and re-ordered objects, by name, through
-    nested items), `constant_fields`;
-  - `tests/make_fixture.py` rewriting a file with uproot, and the chain report on it;
-  - the scale-out helpers, locally (`build_upload_plugin`, `make_local_client`).
-- `nanoaod_layout.read_tree_layout`: **no ROOT file has been opened** by
-  `InspectFileTool` or by the scaffold. `tests/synthetic.py` has never written one.
-  How the function tells an RNTuple from a TTree is taken from uproot's source.
-- The three tools under real Orchestral. The field declarations (for instance
-  `Optional[Union[str, int]]` for `year`, and `Optional[Union[str, List[str]]]` for the
-  check's `sample`) have not been through its schema generation, and its own
-  validation of argument types runs before the checks written here.
-- `tools/plotting.py` and the generated notebooks.
-- `pip install -e .` of a generated project, and `python -m PKG.scripts.*` from an
-  installed one.
-- `scripts/add_samples.py` on `root://` directories (it calls `xrdfs`).
+- The tools served by `tb serve` and called by an agent over MCP. In particular
+  Orchestral's schema generation for the field declarations
+  (`Optional[Union[str, List[str]]]` for the check's `sample`, `channels` and
+  `hist_collections`, `Optional[Union[str, int]]` for `year`), how a refusal by its
+  argument validation reaches the agent, and the 600 s call timeout in use.
+- A real data file: `LumiMask` with a golden JSON, `'gens' is not available in this
+  sample`, and a check given a simulated and a data sample in one call. The data
+  paths ran only on the synthetic files of `tests/test_framework_run.py`.
+- The `schema` and `chain_report` components on a real file (they ran in the tests
+  only), and the chain report's GitHub workflow.
+- `pip install -e .` of a generated project, and its notebooks.
+- `scripts/add_samples.py` on `root://` directories (it calls `xrdfs`), and the
+  how-to's "Split a sample over several runs".
 - `scaleout.make_dask_client`, `check_voms_proxy` and `make_lpc_client`, which can
-  only be tried with a scheduler or at the LPC. `find_lpc_image` is tested against a
-  directory of made-up image names; whether the images carry the names it looks for
-  (`coffea-dak-almalinux*`, formerly `coffea-dask-almalinux*`) on cvmfs was not checked.
-- The GitHub workflow of the chain report.
-- `tools/analysis/test_coffea_skill_docs.py` in this branch (5 tests). It was ported
-  from the SIDMRepo branch; here its input file is written with `mktree` (see below).
-- `tb validate`, `tb install` and serving the tools from a real toolbase install.
-- `examples/framework/launch.py`, and the additions to
-  `examples/shared/harness_launch.py` it uses: the `--call-timeout` wiring, the Codex
-  timeouts and the warm import. Their file edits are unit-tested against the formats
-  `tb connect` writes according to the toolbase source; the Codex keys
+  only be tried with a scheduler or at the LPC with jobs. `find_lpc_image` is tested
+  against a directory of made-up image names; whether the images carry the names it
+  looks for (`coffea-dak-almalinux*`, formerly `coffea-dask-almalinux*`) on cvmfs was
+  not checked.
+- `examples/framework/launch.py` with `--harness codex` or `opencode`; the Codex keys
   `startup_timeout_sec` and `tool_timeout_sec` were not checked against a Codex
   installation.
+- An agent session started by the launcher.
 
 Two things found while reading sources are worth knowing in any case. Since uproot
 5.7, `file["Events"] = {...}` writes an **RNTuple**, not a TTree: everything here that
@@ -279,8 +300,7 @@ from tools.framework.check import CheckAnalysisFrameworkTool
 base = "/path/to/scratch"          # the file must be inside it (a symlink is fine)
 print(ScaffoldAnalysisFrameworkTool(base_directory=base, project_dir="llp", sample_file="data/part-0.root",
                                     objects={"dsaMuons": "DSAMuon"})._run())
-print(AddFrameworkComponentTool(base_directory=base, project_dir="llp", component="lepton_jets",
-                                options={"sources": ["muons", "dsaMuons", "electrons", "photons"]})._run())
+print(AddFrameworkComponentTool(base_directory=base, project_dir="llp", component="lepton_jets")._run())
 report = json.loads(CheckAnalysisFrameworkTool(
     base_directory=base, project_dir="llp", sample="part-0", channels=["baseline_2ljs"],
     hist_collections=["lj_base"], timeout_s=600)._run())
@@ -288,10 +308,15 @@ print(json.dumps(report, indent=1))
 ```
 
 The check reports the cuts each channel applies, cutflows, object counts, warnings
-and which histograms stayed empty; it does not return histogram contents. For the file named above, the physics cross-check is the
-invariant mass of the two leading lepton jets, which should peak near the 500 GeV of
-the sample. To look at it, run the generated code with the same interpreter from
-inside `llp/`:
+and which histograms stayed empty; it does not return histogram contents. For the
+file named above, the physics cross-check is the invariant mass of the two leading
+lepton jets, which should peak near the 500 GeV of the sample: at the LPC, the peak
+bin of the code below was centred at 505 GeV. The lepton jets are clustered from the
+default sources, muons, electrons and photons. Do not add `dsaMuons` to them as they
+are: most muons in this file are also a DSA muon, and clustered twice they move the
+peak to 705 GeV. The `lepton_jets` section of the skill's components reference says how
+to clean one collection against the other first. To look at the mass, run the
+generated code with the same interpreter from inside `llp/`:
 
 ```python
 from coffea import processor
@@ -320,7 +345,7 @@ there says something about those cuts before it says anything about the engine. 
 
 | Symptom | Likely place |
 |---------|--------------|
-| A tool fails to load, or rejects an argument that looks right | The tools were only run against a stand-in for Orchestral's `BaseTool`. Check the field declarations at the top of `scaffold.py`, `components.py` and `check.py`. |
+| A tool fails to load, or rejects an argument that looks right | Orchestral validates every argument against the field declarations at the top of `scaffold.py`, `components.py` and `check.py` (with pydantic, which converts what it can) before the tool runs. The tools have been called directly under orchestral 1.10.1, not yet served by `tb serve`. |
 | `InspectFile` or the scaffold cannot read a file | `nanoaod_layout.read_tree_layout`, the only place a file is opened. |
 | `test_framework_run.py` fails before any analysis runs | `tests/synthetic.py` (`write_tree`): the file is written with `mktree`. `_project` asserts that `nMuon` is among the branches. |
 | `LLVM IR parsing error: invalid cast opcode for cast from 'i64' to 'ptr'` in anything touching `GenPart.children` | numba 0.67.0 with llvmlite 0.49.0 miscompiles coffea's kernel (found in cms-sidm/SIDM, August 2026). `toolkit.yaml` bounds `numba<0.67` for this reason; check what is installed. |
@@ -334,6 +359,7 @@ there says something about those cuts before it says anything about the engine. 
 | A sample's `skim_factor`, `year` or `is_data` seems not to take effect on a second run in one session | A Runner built without `metadata_cache={}`. |
 | Accumulation errors (`Cannot add accumulators of incompatible type`) | `tools/processor.py`, `_output`: the output must hold only numbers, sets, `hist.Hist` and `Cutflow`. |
 | Lepton jets: fastjet rejects the input, or constituents do not line up | `tools/lepton_jets.py`, `cluster` and `_take`. The input is a packed jagged array of plain `px, py, pz, E` records; `_take` is fastjet's own indexing pattern. |
+| Lepton jets heavier or harder than they should be | A particle in two of the sources (a PF and a DSA muon, an electron and a photon) is clustered twice: `LJS_SOURCES` in `definitions/objects.py`, and the cleaning cuts the skill's components reference describes. |
 | The output differs between coffea 2025 and 2026 | `postprocess` returns the accumulator *and* modifies it in place because 2025 ignores the return value and 2026 uses it. |
 | A run with `skipbadfiles=True` comes back short, or stops where it should have skipped | `utilities.is_io_error` decides by the modules in the traceback (`coffea.nanoevents.mapping`, then uproot, fsspec or XRootD) what is passed on to coffea as it is; `utilities.cause` keeps an OSError out of the causes of everything else. |
 | Yields off by the number of jobs | Outputs of separate runs were added by hand instead of with `utilities.merge_outputs`. |

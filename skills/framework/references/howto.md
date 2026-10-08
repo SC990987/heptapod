@@ -154,6 +154,10 @@ dimuon:
 An event cut sees the channel's *selected* objects. A veto on jets counts the jets
 that passed the channel's jet cuts: one outside them cannot veto. To veto on other
 jets, define them as an object of their own ("Add an object") and count that.
+NanoAOD jets are clustered from all particles, leptons included, so a lepton is
+often inside a jet as well: in a lepton channel, a jet veto removes events because of
+their own leptons unless it counts jets cleaned of them (`clean_jets` under "Add an
+object").
 
 An event the cut has no answer for (`None`) fails it. `ak.max`, `ak.min` and
 `ak.firsts` give `None` for an event whose list is empty, so a veto written as
@@ -625,11 +629,13 @@ golden JSON that is missing or broken) still stop the run.
 ## Plot it
 
 The check says whether a histogram was filled, not what is in it. To look at one, or
-when the user asks for a plot, run the analysis as above and plot the output:
+when the user asks for a plot, run the analysis as above and plot the output. The run
+has to fill what is plotted: its command names every channel and every histogram
+collection that the lines below read from.
 
 ```bash
-python -m PKG.scripts.run_analysis --samples Signal Data --channels baseline \
-    --hists electron_base --max-files 1 -o output/baseline.coffea
+python -m PKG.scripts.run_analysis --samples Signal Data --channels baseline baseline_2muons \
+    --hists electron_base muon_base --max-files 1 -o output/baseline.coffea
 ```
 
 ```python
