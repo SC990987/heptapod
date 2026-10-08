@@ -154,8 +154,9 @@ Changed, to make it independent of one analysis:
 ## Verification status
 
 The bundle was written where none of coffea, awkward, uproot, hist, fastjet, dask,
-orchestral or toolbase could be installed. It was first run at the Fermilab LPC on
-7 and 8 October 2026, at commit 119d31b, in two environments:
+orchestral or toolbase could be installed. It was then run at the Fermilab LPC, first on
+7 and 8 October 2026 at commit 119d31b, and again on 8 October at 30ea002, in two
+environments:
 
 | | A: the toolkit's own | B: an existing analysis environment |
 |---|---|---|
@@ -163,14 +164,14 @@ orchestral or toolbase could be installed. It was first run at the Fermilab LPC 
 | Python | 3.12.14 | 3.12.4 |
 | coffea, awkward, uproot, hist | 2026.9.0, 2.14.0, 5.7.7, 2.12.0 | 2025.5.0rc2, 2.8.7, 5.7.5, 2.9.0 |
 | numba, fastjet | 0.66.0, 3.5.2.0 | 0.65.1, 3.4.3.1 |
-| orchestral, pydantic | 1.10.1, 2.13.5 | not installed |
+| orchestral, pydantic | 1.10.1, 2.13.5 (2.14.0 for the checks after the second run) | not installed |
 | dask, distributed | 2026.8.0, installed for the dask test | 2025.3.0 |
 
-### Run at the LPC
+### First run at the LPC (119d31b)
 
 | What | Result |
 |------|--------|
-| `tests/test_framework_run.py` (22 tests) | passed in A (the dask test once dask was installed) and in B (21, with the dask test skipped) |
+| `tests/test_framework_run.py` (22 tests) | passed in A (the dask test once dask was installed) and in B (21, with the one test that needs orchestral skipped) |
 | `tools/analysis/test_nanoaod_inspect.py` (15 tests) | passed (A) |
 | `tests/test_framework.py` (33 tests) | 31 passed (A). The two that failed expected the tools' own answer to arguments of the wrong type, which Orchestral validates against the field declarations before a tool runs: it refused them there, or converted them (`true` to 1, `"no"` to false). Fixed since, see below |
 | `tools/analysis/test_coffea_skill_docs.py` (5 tests) | passed (A) |
@@ -182,22 +183,62 @@ orchestral or toolbase could be installed. It was first run at the Fermilab LPC 
 | `examples/framework/launch.py --harness claude-code --no-launch` | wrote the sandbox: `CLAUDE.md`, both skills, `.mcp.json` with `--call-timeout 600`, and warmed the import cache |
 | `test_runner.py --skip-slow --skip-prereq`, at that commit and at 705b03c, before the bundle | every suite the two have in common gave the same result |
 
-Changed since that run, and checked here only:
+Changed after that run, and confirmed by the second run:
 
 - `CheckAnalysisFramework` takes one name as a string for `channels` and
   `hist_collections`, as it already did for `sample`; Orchestral refused a string for
   those two before. `tests/test_framework.py` accepts a refusal of an argument of the
   wrong type by Orchestral's validation as well as by the tool, and no longer tries
-  values that Orchestral converts rather than refuses.
+  values that Orchestral converts rather than refuses. At 30ea002,
+  `channels="baseline", hist_collections="base"` ran, called directly and over MCP.
 - The command of the how-to's "Plot it" now fills every histogram its python lines
-  read (`--channels baseline baseline_2muons --hists electron_base muon_base`),
-  checked against the stand-ins.
+  read (`--channels baseline baseline_2muons --hists electron_base muon_base`). At
+  30ea002 the command and the python lines ran.
 - The README example below no longer adds DSA muons to the lepton-jet sources. The
   skills say that no particle may be in two sources and how to clean one collection
   against another, and the `lepton_jets` component points it out in its notes when two
-  sources hold the same kind of particle.
+  sources hold the same kind of particle. At 30ea002 the example's peak bin was centred
+  at 505 GeV; with DSA muons added and cleaned as the skill describes, `baseline_2ljs`
+  peaked at 505 GeV too.
 - The how-to's jet veto says that NanoAOD jets contain the leptons: the veto tried at
-  the LPC removed every event of `baseline_2muons`, whose muons were inside jets.
+  the LPC removed every event of `baseline_2muons`, whose muons were inside jets. At
+  30ea002, counted on the selected jets the veto kept 0 of that channel's 1737 events,
+  and counted on jets cleaned of muons, 15.
+
+### Second run at the LPC (30ea002)
+
+| What | Result |
+|------|--------|
+| `tests/test_framework.py` (33 tests), `tests/test_framework_run.py` (22), `tools/analysis/test_nanoaod_inspect.py` (15), `tools/analysis/test_coffea_skill_docs.py` (5), `tb validate` | all passed in A; `test_framework_run.py` also in B (21, with the one test that needs orchestral skipped) |
+| The tools served by `toolbase serve --call-timeout 600`, started from a launcher sandbox as its `.mcp.json` says, and called with the MCP SDK | the four tools are listed. `InspectFile`, the scaffold and the check answered `status: ok`, the check `ok: true`, with one name and with lists for `sample`, `channels` and `hist_collections`, and with an integer `year`. A value that cannot be read as its type comes back as the tool's text, `Error: Validation Error ...` naming the argument, with `isError` false. A misspelt argument name (`chanels`) is dropped without a word, and the check then runs every channel. The published input schemas said `string` for `sample`, `channels`, `hist_collections` and `year`: Orchestral publishes only the first type of a union that is not None |
+| The `schema` component on the LLP NanoAOD file named above | the DSA-muon behaviour and the five `Muon_dsaMatch*idx` cross-references to `DSAMuon` were applied, and the check was `ok: true`. For each of the 4033 selected muons with a first match, `follow` gave the same DSA muon as `DSAMuon[Muon_dsaMatch1idx]` |
+| The `chain_report` component on that file | a 300-event fixture (events 400 to 699) was written and registered, and `compute` ran. `render` reported "No new errors" for a changed threshold (exit 0) and "This change introduces new errors" for a broken cut (exit 1). From event 0, `make_fixture.py` stopped at a damaged basket of the file's `LHEPdfWeight`, which ROOT cannot read either |
+| `pip install -e .` of a generated project | installed; `run_analysis --help` ran from outside the project; `pip uninstall` removed it |
+| `scripts/add_samples.py` on `root://` directories | listed EOS with `xrdfs`: a sample of 47 files, and 90 samples from a directory of samples |
+| The how-to's "Split a sample over several runs" | three runs merged with `utilities.merge_outputs` and with `scripts/merge_outputs` gave the result of one run over the three files: the same cutflows, histograms equal to within 3e-16 |
+| The generated notebook, `test_notebooks/test_processor.ipynb` | its 7 code cells ran without error, with the package importable |
+| One headless agent session: `claude -p` with the four tools over MCP, in a launcher sandbox, asked to add a histogram of the leading muon pT and check it | 10 turns. The histogram was defined in `definitions/hists.py` and listed in `configs/hist_collections.yaml`, and the check was `ok: true` before and after. The first call used the bare tool name and failed ("No such tool available"): Claude Code lists the tools as `mcp__toolbase__<name>` |
+| The check on a `root://` sample, in A | `run.error`: `Install fsspec-xrootd to access xrootd storage system`. The bundle does not install an XRootD client; in B, which has one, the same sample ran |
+
+Changed after the second run, and checked at the LPC on 8 October 2026:
+
+- `CheckAnalysisFramework` declares `sample`, `channels` and `hist_collections` as
+  `Optional[Union[List[str], str]]`, list first, so that their published schemas say
+  "array of strings". Over MCP, both a single name and lists ran, and the values
+  refused before were refused again. `year` (in the check and the scaffold) is still
+  published as `string`: it is a name such as `"2018"`, and an integer is still
+  accepted.
+- The check's description no longer says that every argument of the wrong type is
+  refused: a value that can be read as its type is converted (`strict="no"` runs as
+  false, `max_events=true` as 1), as Orchestral does for every tool.
+- `make_fixture.py` reads the branches one at a time when reading them together
+  fails, and leaves out those it cannot read. From event 0 of the file named above it
+  wrote the fixture, listed `LHEPdfWeight (DecompressionError)` as left out and kept the
+  other 2008 branches, and `chain_report.py compute` ran on it.
+- The example's system prompt says that the client may show the tools with a prefix.
+- With `fsspec-xrootd` and `xrootd` installed into A by pip (0.5.5 and 6.2.0), the
+  check read the first of the 47 files of a `root://` sample: 2272 events, with the
+  cutflows B gave.
 
 ### Checked where the libraries could not be installed
 
@@ -222,19 +263,10 @@ since passed at the LPC.
 
 ### Not run yet
 
-- The tools served by `tb serve` and called by an agent over MCP. In particular
-  Orchestral's schema generation for the field declarations
-  (`Optional[Union[str, List[str]]]` for the check's `sample`, `channels` and
-  `hist_collections`, `Optional[Union[str, int]]` for `year`), how a refusal by its
-  argument validation reaches the agent, and the 600 s call timeout in use.
 - A real data file: `LumiMask` with a golden JSON, `'gens' is not available in this
   sample`, and a check given a simulated and a data sample in one call. The data
   paths ran only on the synthetic files of `tests/test_framework_run.py`.
-- The `schema` and `chain_report` components on a real file (they ran in the tests
-  only), and the chain report's GitHub workflow.
-- `pip install -e .` of a generated project, and its notebooks.
-- `scripts/add_samples.py` on `root://` directories (it calls `xrdfs`), and the
-  how-to's "Split a sample over several runs".
+- The chain report's GitHub workflow.
 - `scaleout.make_dask_client`, `check_voms_proxy` and `make_lpc_client`, which can
   only be tried with a scheduler or at the LPC with jobs. `find_lpc_image` is tested
   against a directory of made-up image names; whether the images carry the names it
@@ -242,8 +274,10 @@ since passed at the LPC.
   not checked.
 - `examples/framework/launch.py` with `--harness codex` or `opencode`; the Codex keys
   `startup_timeout_sec` and `tool_timeout_sec` were not checked against a Codex
-  installation.
-- An agent session started by the launcher.
+  installation. Nor an agent session started by the launcher itself: the one session
+  ran with `claude -p` in a sandbox the launcher made.
+- `test_runner.py` with its prerequisites (a `config.py` and an LLM), and so its `llm`
+  suite and the suites `--skip-slow` leaves out.
 
 Two things found while reading sources are worth knowing in any case. Since uproot
 5.7, `file["Events"] = {...}` writes an **RNTuple**, not a TTree: everything here that
@@ -264,8 +298,8 @@ PY=$(grep -h '^python_path:' ~/.toolbase/cache/heptapod/*/.install_meta.yaml | h
 $PY -c "import coffea, awkward, uproot, hist, fastjet, numba; print(coffea.__version__, awkward.__version__, uproot.__version__, numba.__version__)"
 
 $PY tools/analysis/test_nanoaod_inspect.py --no-skips         # 15 tests
-$PY tools/framework/tests/test_framework.py --no-skips        # 33 tests
-$PY tools/framework/tests/test_framework_run.py               # 22 tests
+$PY tools/framework/tests/test_framework.py --no-skips        # 34 tests
+$PY tools/framework/tests/test_framework_run.py               # 23 tests
 ```
 
 In an environment of your own instead (an existing analysis environment with coffea),
@@ -345,8 +379,9 @@ there says something about those cuts before it says anything about the engine. 
 
 | Symptom | Likely place |
 |---------|--------------|
-| A tool fails to load, or rejects an argument that looks right | Orchestral validates every argument against the field declarations at the top of `scaffold.py`, `components.py` and `check.py` (with pydantic, which converts what it can) before the tool runs. The tools have been called directly under orchestral 1.10.1, not yet served by `tb serve`. |
+| A tool fails to load, or rejects an argument that looks right | Orchestral validates every argument against the field declarations at the top of `scaffold.py`, `components.py` and `check.py` (with pydantic, which converts what it can) before the tool runs. Served over MCP (toolbase 0.16.0, orchestral 1.10.1), such a refusal reaches the client as the tool's text, `Error: Validation Error ...` naming the argument, with `isError` false. |
 | `InspectFile` or the scaffold cannot read a file | `nanoaod_layout.read_tree_layout`, the only place a file is opened. |
+| A check on a `root://` sample stops with `ImportError: Install fsspec-xrootd to access xrootd storage system` | The environment the check runs with has no XRootD client; the bundle does not install one. Install `fsspec-xrootd` and `xrootd` into it, or point `venv` or `analysis_python` at an environment that has them ("Reading the file" in the skill's `pitfalls.md`). |
 | `test_framework_run.py` fails before any analysis runs | `tests/synthetic.py` (`write_tree`): the file is written with `mktree`. `_project` asserts that `nMuon` is among the branches. |
 | `LLVM IR parsing error: invalid cast opcode for cast from 'i64' to 'ptr'` in anything touching `GenPart.children` | numba 0.67.0 with llvmlite 0.49.0 miscompiles coffea's kernel (found in cms-sidm/SIDM, August 2026). `toolkit.yaml` bounds `numba<0.67` for this reason; check what is installed. |
 | `ValueError: ... conflicting ... coordinate representations` | coffea 2026 validates vector fields on first use. `tools/schema.py` (`_build_collections`) and `utilities.as_lorentz` are where one representation is chosen. |

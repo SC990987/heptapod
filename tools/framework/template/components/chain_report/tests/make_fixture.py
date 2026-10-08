@@ -81,7 +81,22 @@ def slice_tree(source, tree_name, first, count):
             # a branch uproot cannot interpret carries the error as its interpretation
             unreadable = isinstance(branch.interpretation, Exception)
             (skipped if unreadable else branches).append(branch.name)
-        arrays = tree.arrays(branches, entry_start=first, entry_stop=stop, library="ak")
+        try:
+            arrays = tree.arrays(branches, entry_start=first, entry_stop=stop, library="ak")
+        except Exception as first_error:            # noqa: BLE001
+            # a damaged basket in some branch: read the branches one at a time over the
+            # same events, and leave out those whose read fails
+            arrays, readable = {}, []
+            for name in branches:
+                try:
+                    arrays[name] = tree[name].array(entry_start=first, entry_stop=stop, library="ak")
+                    readable.append(name)
+                except Exception as error:          # noqa: BLE001
+                    skipped.append(f"{name} ({type(error).__name__})")
+            if not readable:
+                sys.exit(f"no branch of {source} could be read: "
+                         f"{type(first_error).__name__}: {first_error}")
+            branches = readable
 
     jagged, _ = collection_layout(branches)
     output, written = {}, set()

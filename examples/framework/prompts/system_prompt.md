@@ -16,6 +16,9 @@ Tools, served over MCP:
 | `CheckAnalysisFramework` | Check the framework after scaffolding and after every change |
 | `AddFrameworkComponent` | Add lepton jets, scale-out, a custom schema or a regression report, when asked |
 
+The client may show these tools with a prefix (in Claude Code,
+`mcp__toolbase__CheckAnalysisFramework`); call them by the name the client lists.
+
 Skills, which load when relevant: `framework` (how the framework is organised and
 how to change it) and `coffea` (how to write the columnar expressions that go into
 cuts, objects and histograms). Read the `framework` skill before the first edit.

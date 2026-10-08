@@ -1027,6 +1027,67 @@ def test_chain_report_roundtrip():
     assert rendered.returncode == 0 and "## Chain report" in rendered.stdout
 
 
+def test_make_fixture_leaves_out_a_branch_it_cannot_read():
+    # Real files can hold a damaged basket (one did, at the LPC): the fixture is cut
+    # from the branches that can be read, and the damaged one is listed as left out.
+    import struct
+
+    import awkward as ak
+    import numpy as np
+    import uproot
+    from tools.framework.tests import synthetic
+
+    handle = _project("damaged", add=[("chain_report", None)])
+    tests_dir = handle["project"] / "tests"
+    source = handle["base"] / "damaged.root"
+    n = 200
+    counts = np.arange(n) % 3
+    with uproot.recreate(str(source)) as out:
+        synthetic.write_tree(out, "Events", {
+            "run": np.ones(n, dtype=np.uint32), "luminosityBlock": np.ones(n, dtype=np.uint32),
+            "event": np.arange(n, dtype=np.uint64),
+            "Muon": ak.zip({"pt": ak.unflatten(np.full(counts.sum(), 30.0), counts),
+                            "eta": ak.unflatten(np.zeros(counts.sum()), counts)}),
+            "Damaged": np.zeros(n)})            # zeros: its basket is stored compressed
+
+    with uproot.open(str(source)) as handle_in:
+        branch = handle_in["Events"]["Damaged"]
+        seek = int(branch.member("fBasketSeek")[0])
+    raw = bytearray(source.read_bytes())
+    # the basket's key: fNbytes (4 bytes), fVersion (2), fObjlen (4), fDatime (4), fKeylen (2)
+    key_length = struct.unpack(">h", bytes(raw[seek + 14:seek + 16]))[0]
+    data = seek + key_length
+    assert bytes(raw[data:data + 2]) in (b"ZL", b"L4", b"XZ", b"ZS", b"CS"), bytes(raw[data:data + 9])
+    raw[data + 9:data + 25] = b"\xff" * 16    # the compressed stream after its 9-byte header
+    source.write_bytes(bytes(raw))
+    with uproot.open(str(source)) as handle_in:
+        tree = handle_in["Events"]
+        try:
+            tree["Damaged"].array(library="ak")
+            readable = True
+        except Exception:                       # noqa: BLE001
+            readable = False
+        assert not readable, "the damaged branch must really be unreadable"
+        assert ak.sum(tree["nMuon"].array(library="ak")) == counts.sum()
+
+    made = subprocess.run(
+        [sys.executable, str(tests_dir / "make_fixture.py"), str(source), "--dataset", "Damaged",
+         "--events", "120", "--year", "2018", "--skim-factor", "0.5"],
+        cwd=str(handle["project"]), env=dict(os.environ, MPLBACKEND="Agg"),
+        capture_output=True, text=True)
+    assert made.returncode == 0, made.stdout + made.stderr
+    fixture = tests_dir / "data" / "Damaged_120ev.root"
+    assert fixture.is_file(), made.stdout
+    import yaml
+    registered = yaml.safe_load((tests_dir / "fixtures.yaml").read_text())["fixtures"]
+    assert [f["dataset"] for f in registered] == ["Damaged"], registered
+    assert "left out 1 branch(es)" in made.stdout and "'Damaged (" in made.stdout, made.stdout
+    rewritten = nanoaod_layout.read_tree_layout(str(fixture))
+    assert rewritten["trees"] == {"Events": 120}, rewritten["trees"]
+    assert {"run", "luminosityBlock", "event", "nMuon", "Muon_pt", "Muon_eta"} <= set(rewritten["branches"])
+    assert "Damaged" not in rewritten["branches"], rewritten["branches"]
+
+
 def test_scaleout_ships_the_package_and_dask_gives_the_same_answer():
     # coffea's DaskExecutor imports dask.dataframe, which needs pandas and pyarrow
     _need("coffea", "dask", "distributed", "dask.dataframe")

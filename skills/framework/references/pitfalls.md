@@ -261,6 +261,13 @@ dR before combining them, and clean one against the other (`components.md`,
 
 ## Reading the file
 
+- `ImportError: Install fsspec-xrootd to access xrootd storage system ...`, caused by
+  `ModuleNotFoundError: No module named 'fsspec_xrootd'`, as the `run.error` of a check
+  on a sample whose files are `root://` URLs: the environment the check runs with has no
+  XRootD client, and the framework bundle does not install one. Either install
+  `fsspec-xrootd` and `xrootd` into that environment (`<python> -m pip install
+  fsspec-xrootd xrootd`, with the interpreter the check reports as `python`), or point
+  `venv` or `analysis_python` at an environment that has them.
 - `ValueError: ... conflicting azimuthal coordinate representations`: a collection
   stores (px, py, pz) next to (pt, eta, phi). `AnalysisSchema` hides the cartesian set
   for collections coffea knows. If the error persists, the file was opened with plain

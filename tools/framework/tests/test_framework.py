@@ -1442,6 +1442,25 @@ def test_check_tool_requests_and_report_handling():
             assert "-m ana.tools.check" in answer["command"]
 
 
+def test_published_schemas_say_what_the_tools_accept():
+    # Orchestral publishes the first type of a union that is not None, so the order of
+    # the union decides what a client is told: a list of names, of which one name is
+    # the special case.
+    tools = _tools()[:3]
+    from orchestral.tools.base.schema_generator import SchemaGenerator
+
+    specs = {tool.__name__: SchemaGenerator.generate_tool_spec(tool).input_schema for tool in tools}
+    for name, schema in specs.items():
+        assert schema["type"] == "object" and schema["properties"], (name, schema)
+    check = specs["CheckAnalysisFrameworkTool"]["properties"]
+    for field in ("sample", "channels", "hist_collections"):
+        assert check[field].get("type") == "array", (field, check[field])
+        assert check[field].get("items") == {"type": "string"}, (field, check[field])
+        assert "anyOf" not in check[field], (field, check[field])
+    assert check["max_events"].get("type") == "integer", check["max_events"]
+    assert check["strict"].get("type") == "boolean", check["strict"]
+
+
 def test_launcher_edits_the_harness_configs():
     sys.path.insert(0, str(REPO_ROOT / "examples" / "shared"))
     try:

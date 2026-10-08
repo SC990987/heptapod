@@ -149,12 +149,14 @@ python -m my_analysis.tools.check --sample <NAME>
 ## Status
 
 The `framework` bundle is new. It was written and statically checked in an
-environment without coffea, and first run at the Fermilab LPC in October 2026: its
-tests and a generated framework against coffea 2025.5.0rc2 and 2026.9.0, on an LLP
-NanoAOD signal file and on synthetic files, and this launcher with `--no-launch`. No
-agent session has been started with it yet, and no data file has been run. Treat a
-failing check on a freshly scaffolded project as a possible fault of the generator,
-not only of the analysis.
+environment without coffea, and run at the Fermilab LPC in October 2026: its tests
+and a generated framework against coffea 2025.5.0rc2 and 2026.9.0, on an LLP NanoAOD
+signal file and on synthetic files; this launcher with `--no-launch`; the tools served
+over MCP from a sandbox it made; and one headless agent session in such a sandbox
+(`claude -p`, not started by the launcher). No data file has been run, and the
+launcher has not been tried with `--harness codex` or `opencode`. Treat a failing
+check on a freshly scaffolded project as a possible fault of the generator, not only
+of the analysis.
 [tools/framework/README.md](../../tools/framework/README.md#verification-status)
 lists what was and was not checked and the commands that check it.
 

@@ -47,7 +47,7 @@ def option_like(values) -> List[str]:
 
 
 def build_command(python: str, package: str, report_path: str, *,
-                  sample: Optional[Union[str, List[str]]] = None,
+                  sample: Optional[Union[List[str], str]] = None,
                   sample_file: Optional[str] = None, is_data: Optional[bool] = None,
                   year: Optional[str] = None, channels: Optional[List[str]] = None,
                   hist_collections: Optional[List[str]] = None, max_events: int = 2000,
@@ -339,14 +339,16 @@ class CheckAnalysisFrameworkTool(BaseTool):
     Errors:
         A formatted error if project_dir is not a framework, a path leaves the
         working directory, a name starts with "-", the interpreter lacks the
-        libraries, or the check times out. An argument of the wrong type is refused
-        with a message that names it.
+        libraries, or the check times out. Arguments are checked against their types
+        before the tool runs: a value that cannot be read as its type is refused, with
+        a message that names the argument; one that can is converted (the text "false"
+        becomes false).
     """
 
     # --------------------------- Runtime fields --------------------------- #
     project_dir: str = RuntimeField(
         description="Directory of the analysis framework, relative to the working directory")
-    sample: Optional[Union[str, List[str]]] = RuntimeField(
+    sample: Optional[Union[List[str], str]] = RuntimeField(
         default=None,
         description="Configured sample to run on, or a list of them (static checks only if omitted)")
     tag: Optional[str] = RuntimeField(
@@ -358,9 +360,9 @@ class CheckAnalysisFrameworkTool(BaseTool):
     is_data: Optional[bool] = RuntimeField(
         default=None, description="Whether sample_file is data (default: decided from the file)")
     year: Optional[Union[str, int]] = RuntimeField(default=None, description="Run period of sample_file")
-    channels: Optional[Union[str, List[str]]] = RuntimeField(
+    channels: Optional[Union[List[str], str]] = RuntimeField(
         default=None, description="Channel to run, or a list of them (default: every channel)")
-    hist_collections: Optional[Union[str, List[str]]] = RuntimeField(
+    hist_collections: Optional[Union[List[str], str]] = RuntimeField(
         default=None,
         description="Histogram collection to fill, or a list of them (default: every collection)")
     max_events: int = RuntimeField(default=2000, description="Events to process in the run")
