@@ -232,6 +232,9 @@ Changed, to make it independent of one analysis:
 - **Index branches may be stored as floats.** coffea's `local2global` refuses them;
   `tools/schema.py` wraps it with a conversion (cms-sidm/SIDM replaces the function
   for the same reason).
+- **A sample without a year is in the project's run period** (`YEAR`), as cms-sidm/SIDM
+  reads its signal samples, which name none, as 2018. The sample configs therefore write
+  a year for data and for simulation of another period only, as SIDM's do.
 - **The tree name is a property of the project** (`TREE_NAME`), not a literal
   repeated in every script and notebook.
 
@@ -325,10 +328,10 @@ Changed after the second run, and checked at the LPC on 8 October 2026:
   check read the first of the 47 files of a `root://` sample: 2272 events, with the
   cutflows B gave.
 
-### Added after the third check (not run at the LPC yet)
+### Added after the third check
 
-Asked for after 49fecc1, and so far run only here, against stand-ins for the
-libraries:
+Asked for after 49fecc1, run here against stand-ins for the libraries, then at the LPC
+at c85ef96 (next section):
 
 - building in a git repository (`repo`), cloned and committed, never pushed;
 - sample configs from the directories the samples live in (`sample_locations`), a
@@ -354,7 +357,28 @@ one commit. The notebook ran from
 top to bottom on the stand-ins for coffea, awkward and hist used for the engine's
 control flow (see below). `tests/test_framework_run.py` has a new test (24 in all)
 that scaffolds from directories of synthetic files and runs every cell of the study
-with the real libraries; it has not run yet.
+with the real libraries.
+
+### Fourth run at the LPC (c85ef96, 21 October 2026)
+
+In environment A, rebuilt with `tb install . --bundle framework --bundle coffea --rebuild`:
+
+| What | Result |
+|------|--------|
+| `tools/analysis/test_nanoaod_inspect.py --no-skips` (15) | passed |
+| `tests/test_framework.py --no-skips` (38) | passed |
+| `tests/test_framework_run.py` (24) | 22 passed, the study's test among them; the dask test skipped (dask was not installed); `test_check_tool_runs_the_generated_checker` failed: a sample added to `samples.yaml` by hand, without a year, came out with none where the test expected 2018 |
+
+The cause: the sample configs used to carry the run period on the group, and a sample
+added by hand inherited it. Written as SIDM writes them, they carried it on every
+sample instead, and the group had none. Changed since, and so far checked only here:
+the project's run period is `YEAR` in the package's `__init__.py` (the scaffold's
+`year`), and a sample without a year takes it, as cms-sidm/SIDM's `make_fileset` takes
+"2018" (`utilities.sample_year`, used by `make_fileset` and the check). Data states its
+year, and simulation only a period that is not `YEAR`, in the scaffold's configs and in
+those of `scripts/add_samples.py`. Rebuilt with `year="2018"` from the file lists of
+SIDM's 2018 v10 2mu2e and 4mu configs, both configs come out as SIDM's, apart from one
+blank line in each and the files SIDM commented out by hand.
 
 ### Checked where the libraries could not be installed
 

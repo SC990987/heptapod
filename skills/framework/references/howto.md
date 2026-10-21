@@ -446,6 +446,12 @@ The script adds the group at the end of the file and leaves the rest as it is, c
 included: a file that cannot be read can be commented out (`# - ..._part-7.root`), as
 SIDM does. `--update` replaces a group that exists, in place.
 
+A sample without a `year` is in the project's run period, `YEAR` in `PKG/__init__.py`
+(the scaffold's `year`), as SIDM's `make_fileset` takes 2018 for its signal samples; a
+`year` on the group comes first. So data states its year and simulation only another
+one, by the scaffold and by the script alike, and a sample added by hand needs a `year`
+only when it is not `YEAR`.
+
 Every file under `configs/samples/` is searched: `utilities.make_fileset(["A", "B"])`,
 the scripts and the check find a sample by its name wherever it is. A name used in two
 groups needs its group, `tag="v2"` (`--tag`, `tag` of `CheckAnalysisFramework`), and in

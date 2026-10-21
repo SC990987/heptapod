@@ -30,7 +30,7 @@ from tools.framework import _scaffold as scaffold  # noqa: E402
 
 LAYOUT = nanoaod_layout.split_collections(BRANCHES)
 TOKENS = ("analysis_pkg", "__PROJECT_TITLE__", "__PROJECT_DESCRIPTION__", "__AUTHOR__",
-          "__EXPERIMENT__", "__EXAMPLE_SAMPLE__", "__EXAMPLE_HIST__", "__TREE_NAME__")
+          "__EXPERIMENT__", "__EXAMPLE_SAMPLE__", "__EXAMPLE_HIST__", "__TREE_NAME__", "__YEAR__")
 
 
 class _Skipped(Exception):
@@ -249,6 +249,14 @@ def test_yaml_configs_parse():
     block = yaml.safe_load(render.render_sample_configs(samples, [])["samples.yaml"])["main"]
     assert block["samples"]["Sig-1"] == {"files": ["/a/b.root"], "skim_factor": 0.25, "year": "2018"}
     assert block["samples"]["Data"] == {"files": ["x.root", "y.root"], "is_data": True, "year": "2017"}
+    # in the project's run period (YEAR), simulation is written without a year, as in
+    # cms-sidm/SIDM's signal configs, and data states its year all the same
+    in_2018 = yaml.safe_load(render.render_sample_configs(samples, [], year="2018")["samples.yaml"])["main"]
+    assert in_2018["samples"]["Sig-1"] == {"files": ["/a/b.root"], "skim_factor": 0.25}
+    assert in_2018["samples"]["Data"] == {"files": ["x.root", "y.root"], "is_data": True, "year": "2017"}
+    data_2018 = [{**samples[1], "year": "2018"}]
+    assert yaml.safe_load(render.render_sample_configs(data_2018, [], year="2018")["samples.yaml"])[
+        "main"]["samples"]["Data"]["year"] == "2018"
     # a location's group, line for line as in cms-sidm/SIDM's signal_2mu2e_v10.yaml
     point = "CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-100_MDp-0p25_ctau-0p02_v3"
     group = {"tag": "llpNanoAOD_v2", "config": "signal_2mu2e_v10.yaml",
@@ -313,6 +321,7 @@ def test_project_is_complete_and_has_no_placeholders():
         assert _compile_all(project) >= 16
         assert "The 'X' search" in (project / "README.md").read_text(encoding="utf8")
         assert 'EXPERIMENT = "CMS"' in (project / package / "tools" / "plotting.py").read_text(encoding="utf8")
+        assert 'YEAR = "2018"' in (project / package / "__init__.py").read_text(encoding="utf8")
         marker = projects.read_marker(project)
         assert marker["package"] == package and marker["objects"]["dsaMuons"] == "DSAMuon"
         assert projects.find_package(project) == package
@@ -395,12 +404,15 @@ def test_sample_locations_become_groups_laid_out_like_sidm():
         configs = {path.name: yaml.safe_load(path.read_text())
                    for path in (package / "configs/samples").glob("*.yaml")}
         assert sorted(configs) == ["DoubleMuon.yaml", "samples.yaml", "signal.yaml"]
-        assert configs["samples.yaml"]["main"]["samples"] == {"Extra": {"files": ["/e.root"], "year": "2018"}}
+        # simulation of the project's run period names no year (it takes YEAR, as SIDM's
+        # signal samples take 2018); data states its year
+        assert 'YEAR = "2018"' in (package / "__init__.py").read_text()
+        assert configs["samples.yaml"]["main"]["samples"] == {"Extra": {"files": ["/e.root"]}}
         config = configs["signal.yaml"]
         assert list(config) == ["signal"] and config["signal"]["path"] == str(data / "signal") + "/"
         # the directory a sample's files are in is its path, as in cms-sidm/SIDM's configs
         assert config["signal"]["samples"]["A_500GeV"] == {
-            "files": ["part-0.root", "part-1.root"], "path": "A_500GeV/nano/", "year": "2018"}
+            "files": ["part-0.root", "part-1.root"], "path": "A_500GeV/nano/"}
         assert configs["DoubleMuon.yaml"]["DoubleMuon"]["samples"] == {
             "DoubleMuon": {"files": ["out_1.root", "out_2.root"], "is_data": True, "year": "2018"}}
         text = (package / "configs/samples/signal.yaml").read_text()
@@ -443,15 +455,23 @@ def test_sample_locations_become_groups_laid_out_like_sidm():
             text = cfg.read_text()
             assert text.startswith("# my production\nolder:\n") and "# - bad.root  # LZMA" in text
             assert "\n\n\n# signal points\nv1:\n" in text, text
+            # --year 2018 is the project's YEAR: simulation in it names no year, as the
+            # scaffold writes it; another period is written
             assert yaml.safe_load(text)["v1"]["samples"]["S_A_500GeV"] == {
-                "files": ["part-0.root", "part-1.root"], "path": "A_500GeV/nano/", "year": "2018"}
+                "files": ["part-0.root", "part-1.root"], "path": "A_500GeV/nano/"}
+            with contextlib.redirect_stdout(io.StringIO()):
+                assert add_samples.main(["-o", str(cfg), "-t", "v2017", "-d", str(data / "signal"),
+                                         "--year", "2017", "--name-format", "T_{dir}"]) == 0
+            assert yaml.safe_load(cfg.read_text())["v2017"]["samples"]["T_B_100GeV"] == {
+                "files": ["part-0.root"], "path": "B_100GeV/nano/", "year": "2017"}
+            # data states its year, the project's YEAR when --year is not given
             with contextlib.redirect_stdout(io.StringIO()):
                 assert add_samples.main(["-o", str(cfg), "-t", "older", "-d", str(data / "DoubleMuon"),
                                          "--name", "DoubleMuon_2018C", "--data", "--update"]) == 0
             text = cfg.read_text()
             assert text.startswith("# my production\nolder:\n  path: ") and "bad.root" not in text, text
             assert yaml.safe_load(text)["older"]["samples"] == {
-                "DoubleMuon_2018C": {"files": ["out_1.root", "out_2.root"], "is_data": True}}
+                "DoubleMuon_2018C": {"files": ["out_1.root", "out_2.root"], "is_data": True, "year": "2018"}}
             assert "# signal points\nv1:" in text
             try:
                 with contextlib.redirect_stdout(io.StringIO()):
@@ -592,7 +612,8 @@ def test_sample_locations_become_groups_laid_out_like_sidm():
                                "  path: root://xcache//store/2018_v10/BsTo2DpTo2Mu2e/\n  samples:\n"
                                "    2Mu2E_100GeV_0p25GeV_0p02mm:\n      files:\n      - x_part-0.root\n"
                                "      path: CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-100_MDp-0p25_ctau-0p02_v3/"
-                               "LLPnanoAODv2/\n      year: \"2018\"\n"), text
+                               "LLPnanoAODv2/\n    2Mu2E_100GeV_0p25GeV_10p0mm:\n"), text
+        assert "year:" not in text       # 2018 is the project's YEAR: SIDM's signal configs name none
         assert "named by name_format" in " ".join(result["notes"])
         for location, expected in (({"name_format": "2Mu2E_{MBs}GeV_{mass}"}, "has no mass"),
                                    ({"name_format": "2Mu2E_{MDp}GeV"}, "names both"),
@@ -916,9 +937,10 @@ def test_user_text_is_written_as_given():
         project, package = Path(tmp) / "demo_analysis", result["package"]
         samples = yaml.safe_load((project / package / "configs/samples/samples.yaml").read_text("utf8"))
         block = samples["main"]
-        assert block["samples"]["Sig_M-500"]["year"] == "2018" and block["samples"]["Sig_M-500"]["files"] == [path]
+        assert block["samples"]["Sig_M-500"]["files"] == [path]
         assert "is_data" not in block["samples"]["Sig_M-500"]       # the text "false" is not true
-        assert block["samples"]["Data"]["is_data"] is True
+        assert "year" not in block["samples"]["Sig_M-500"]          # simulation of YEAR names none
+        assert block["samples"]["Data"]["is_data"] is True and block["samples"]["Data"]["year"] == "2018"
         xsecs = yaml.safe_load((project / package / "configs/cross_sections.yaml").read_text())
         assert xsecs == {"Sig_M-500": 1e-5} and isinstance(xsecs["Sig_M-500"], float)
         periods = yaml.safe_load((project / package / "configs/run_periods.yaml").read_text())

@@ -24,7 +24,7 @@ import sys
 import time
 import traceback
 
-from analysis_pkg import BASE_DIR, TREE_NAME, __version__
+from analysis_pkg import BASE_DIR, TREE_NAME, YEAR, __version__
 
 RESERVED_OBJECT_NAMES = ("evt_weights", "ch")
 RESERVED_AXIS_NAMES = ("weight", "sample", "threads", "channel")
@@ -339,7 +339,7 @@ def _static_checks(report):
                                     f"and in {cfg_name}: it can only be used with its config "
                                     "named (location_cfg=... or --location-cfg)")
                 is_data = utilities.as_bool(cfg.get("is_data", False))
-                year = str(cfg.get("year", block.get("year", "")) or "")
+                year = utilities.sample_year(cfg, block)
                 files = cfg.get("files") or []
                 files = [files] if isinstance(files, str) else files
                 if not isinstance(files, (list, tuple)):
@@ -511,7 +511,7 @@ def build_fileset(args):
         return fileset
     if args.file:
         path = args.file if "://" in args.file else os.path.abspath(args.file)
-        metadata = {"skim_factor": 1.0, "year": args.year or ""}
+        metadata = {"skim_factor": 1.0, "year": str(args.year or YEAR or "")}
         if args.data:
             metadata["is_data"] = True
         elif args.mc:
@@ -579,7 +579,7 @@ def main(argv=None):
     parser.add_argument("--dataset", help="dataset name to use with --file (default: check)")
     parser.add_argument("--data", action="store_true", help="--file is data")
     parser.add_argument("--mc", action="store_true", help="--file is simulation")
-    parser.add_argument("--year", help="run period of --file")
+    parser.add_argument("--year", help="run period of --file (default: YEAR of the package)")
     parser.add_argument("--channels", nargs="+", help="channels to run (default: all)")
     parser.add_argument("--hists", nargs="*", help="hist collections to fill (default: all)")
     parser.add_argument("--max-events", type=int, default=2000)

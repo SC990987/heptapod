@@ -11,7 +11,7 @@ import awkward as ak
 import numpy as np
 import yaml
 
-from analysis_pkg import BASE_DIR
+from analysis_pkg import BASE_DIR, YEAR
 
 
 # --------------------------------------------------------------------------- #
@@ -105,6 +105,16 @@ def as_bool(value):
     return bool(value)
 
 
+def sample_year(cfg, block=None):
+    """The run period of a sample, as text: its own ``year``, else its group's, else the
+    project's ``YEAR`` (``analysis_pkg/__init__.py``), as cms-sidm/SIDM takes "2018" for a
+    sample that names none. ``year: ""`` says the sample has no run period."""
+    for where in (cfg, block):
+        if isinstance(where, dict) and where.get("year") is not None:
+            return str(where["year"])
+    return str(YEAR or "")
+
+
 def load_samples(location_cfg="samples.yaml", tag=None):
     """Return ``{tag: block}`` for the groups of samples in one location config.
 
@@ -179,7 +189,8 @@ def make_fileset(samples, tag=None, max_files=-1, location_cfg=None,
         that reach the same storage through a different door (a cache versus a
         redirector: ``{"root://xcache//": "root://cmseos.fnal.gov//"}``)
 
-    Each sample carries the metadata the processor reads: ``is_data``, ``year`` and
+    Each sample carries the metadata the processor reads: ``is_data``, ``year`` (the
+    project's ``YEAR`` unless the sample or its group names another, see sample_year) and
     ``skim_factor`` (the fraction of the original events that survived a skim; the
     sum of generator weights is divided by it before normalising).
 
@@ -233,7 +244,7 @@ def make_fileset(samples, tag=None, max_files=-1, location_cfg=None,
             "metadata": {
                 "skim_factor": skim_factor,
                 "is_data": as_bool(cfg.get("is_data", False)),
-                "year": str(cfg.get("year", block.get("year", "")) or ""),
+                "year": sample_year(cfg, block),
             },
         }
     _check_shared_files(fileset)

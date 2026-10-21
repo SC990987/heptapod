@@ -245,7 +245,10 @@ Then:
   and that period's golden JSON in `analysis_pkg/data/`, named there as `golden_json`.
 
 The events are read from the tree named `TREE_NAME` in `analysis_pkg/__init__.py`
-(currently `__TREE_NAME__`).
+(currently `__TREE_NAME__`). A sample whose config names no `year` is in the run period
+`YEAR` of the same file (empty for none), the way cms-sidm/SIDM takes 2018 for its
+signal samples: the sample configs write a year for data, and for simulation only when
+it is another period.
 
 ### Add a scale factor
 

@@ -101,7 +101,10 @@ class ScaffoldAnalysisFrameworkTool(BaseTool):
             (pvs, muons, electrons, photons, jets, met, hlt, flags, gens). Default true.
         triggers: HLT paths ORed into a "pass triggers" event cut of the baseline
             selection, with or without the "HLT_" prefix.
-        year: Run period of the samples, e.g. "2018".
+        year: Run period of the samples, e.g. "2018". It becomes the package's YEAR,
+            which a sample that names no period takes, so the sample configs write a
+            year only for data and for simulation of another period, as cms-sidm/SIDM's
+            do (its signal configs name none and are read as 2018).
         lumi: Integrated luminosity of that period in /pb. Needs `year`.
         golden_json: Golden JSON for that period, relative to the working directory;
             copied into the package's data/ directory. Needs `year`.
@@ -193,7 +196,8 @@ class ScaffoldAnalysisFrameworkTool(BaseTool):
     triggers: Optional[List[str]] = RuntimeField(
         default=None, description="HLT paths ORed into the baseline 'pass triggers' cut")
     year: Optional[Union[str, int]] = RuntimeField(
-        default=None, description="Run period of the samples, e.g. '2018'")
+        default=None, description="Run period of the samples, e.g. '2018': the package's "
+                                  "YEAR, taken by every sample that names no other")
     lumi: Optional[float] = RuntimeField(
         default=None, description="Integrated luminosity of the run period in /pb (needs year)")
     golden_json: Optional[str] = RuntimeField(

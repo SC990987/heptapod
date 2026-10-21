@@ -1130,11 +1130,13 @@ def test_samples_found_in_directories_and_the_first_study():
                                         "data.yaml": {"llpNanoAOD_v2": 1}}
     configs = project / "fw_study" / "configs" / "samples"
     signal = yaml.safe_load((configs / "signal_2mu2e_v10.yaml").read_text())["llpNanoAOD_v2"]
+    # simulation of the project's run period names no year, as in SIDM's signal configs;
+    # data states its year
     assert signal["samples"]["2Mu2E_500GeV"] == {
-        "files": ["part-0.root", "part-1.root"], "path": "SIDM_BsTo2DpTo2Mu2e_MBs-500_v3/LLPnanoAODv2/",
-        "year": "2018"}
+        "files": ["part-0.root", "part-1.root"], "path": "SIDM_BsTo2DpTo2Mu2e_MBs-500_v3/LLPnanoAODv2/"}
     data = yaml.safe_load((configs / "data.yaml").read_text())["llpNanoAOD_v2"]
     assert data["samples"]["DoubleMuon_2018C"]["is_data"] is True
+    assert data["samples"]["DoubleMuon_2018C"]["year"] == "2018"
     assert not (configs / "samples.yaml").exists()
 
     # the notebook, cell by cell, from its own directory (it finds the package itself)

@@ -803,9 +803,14 @@ def yaml_text(text: str) -> str:
     return q(text)
 
 
-def _sample_group(group: Dict[str, Any]) -> List[str]:
+def _sample_group(group: Dict[str, Any], year: Optional[str] = None) -> List[str]:
     """One group of a sample config, in cms-sidm/SIDM's layout: the comment, the tag,
-    its path, and per sample its files, then is_data, path, skim_factor and year."""
+    its path, and per sample its files, then is_data, path, skim_factor and year.
+
+    ``year`` is the project's run period (YEAR in the package), which a sample without
+    one takes. As in SIDM's configs, data states its year and simulation only a year
+    that differs from it (SIDM's signal samples name none and are taken as 2018)."""
+    default = str(year or "")
     out = [f"# {group['comment']}"] if group.get("comment") else []
     out += [f"{yaml_text(group['tag'])}:", f"  path: {yaml_text(group.get('path') or '')}",
             "  samples:"]
@@ -819,23 +824,26 @@ def _sample_group(group: Dict[str, Any]) -> List[str]:
             out.append(f"      path: {yaml_text(sample['path'])}")
         if sample.get("skim_factor") is not None:
             out.append(f"      skim_factor: {num(sample['skim_factor'])}")
-        if sample.get("year"):
+        if sample.get("year") and (sample.get("is_data") or str(sample["year"]) != default):
             out.append(f"      year: {q(sample['year'])}")
     return out
 
 
 def render_sample_configs(samples: List[Dict[str, Any]], groups: List[Dict[str, Any]],
-                          package: str = PLACEHOLDER_PACKAGE) -> Dict[str, str]:
+                          package: str = PLACEHOLDER_PACKAGE,
+                          year: Optional[str] = None) -> Dict[str, str]:
     """``{file name: text}`` of the configs under configs/samples/: the samples given file
     by file in samples.yaml (group "main"), and each location's group in its own file,
-    laid out as cms-sidm/SIDM's ntuple configs (signal_2mu2e_v10.yaml, data.yaml)."""
+    laid out as cms-sidm/SIDM's ntuple configs (signal_2mu2e_v10.yaml, data.yaml).
+    ``year`` is the project's run period: simulation in it is written without a year."""
     files: Dict[str, List[str]] = {}
     if samples or not groups:
         out = []
         if samples:
             out += _sample_group({"tag": "main", "path": "", "samples": samples,
                                   "comment": "samples given file by file "
-                                             "(configs/samples/README.md describes the layout)"})
+                                             "(configs/samples/README.md describes the layout)"},
+                                 year)
         else:
             out += ["# samples given file by file (configs/samples/README.md describes the layout)",
                     "main:",
@@ -845,14 +853,14 @@ def render_sample_configs(samples: List[Dict[str, Any]], groups: List[Dict[str, 
                     "    # MySample:",
                     "    #   files:",
                     "    #   - /complete/path/to/file.root",
-                    "    #   year: \"2018\"",
+                    "    #   year: \"2017\"   # only if not YEAR of the package",
                     f"    # or a directory of them: python -m {package}.scripts.add_samples"]
         files["samples.yaml"] = out
     for group in groups:
         out = files.setdefault(group["config"], [])
         if out:
             out += ["", ""]
-        out += _sample_group(group)
+        out += _sample_group(group, year)
     return {name: "\n".join(lines) + "\n" for name, lines in files.items()}
 
 
@@ -873,14 +881,16 @@ llpNanoAOD_v2:                              # the group (tag)
       - CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3_part-0.root
       # - ..._part-7.root  # a file that cannot be read can be commented out
       path: CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3/LLPnanoAODv2/
-      year: "2018"
 ```
 
 A file is read from the group's `path`, then the sample's `path`, then its name in
 `files` (a complete path or url in `files` is taken as it is). A sample can also say
-`is_data: true` (data), `year` (its run period in `configs/run_periods.yaml`; a `year` on
-the group applies to all of its samples) and `skim_factor` (the fraction of the
-original events a skim kept). Simulated samples take their cross section from
+`is_data: true` (data), `year` (its run period in `configs/run_periods.yaml`) and
+`skim_factor` (the fraction of the original events a skim kept). A sample without a
+`year` takes its group's, if the group has one, or else `YEAR` of
+`{package}/__init__.py`, the project's run period, the way SIDM takes 2018 for its
+signal samples; so, as in SIDM's configs, data states its year and simulation only a
+year that is not `YEAR`. Simulated samples take their cross section from
 `configs/cross_sections.yaml`, under the sample's name.
 
 Every file here is read: `utilities.make_fileset(["2Mu2E_500GeV_0p25GeV_0p4mm"])` finds the

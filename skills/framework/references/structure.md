@@ -20,7 +20,8 @@ only to change how *every* analysis built this way behaves.
 | `check.py` | `python -m PKG.tools.check`: static consistency checks and an optional short run. |
 
 `PKG/__init__.py` holds `BASE_DIR` (where the package is, for finding `configs/` and
-`data/`) and `TREE_NAME` (the tree the events are read from).
+`data/`), `TREE_NAME` (the tree the events are read from) and `YEAR` (the run period of
+a sample that names none).
 
 `.analysis_framework.json`, next to the package, records what the framework was
 scaffolded from (the objects and their collections, the tree, the trigger paths, the
@@ -76,7 +77,9 @@ each sample the directory its files are in below it (`<sample>/LLPnanoAODv2/`), 
 `files` the names under that. A file's location is the three joined; a complete path or
 url in `files` is used as it is. Every file is searched for a sample by name
 (`utilities.find_samples()` lists them all); `tag` and `location_cfg` choose when a name
-is used twice.
+is used twice. A sample without a `year` takes its group's, or else `YEAR` of
+`PKG/__init__.py` (`utilities.sample_year`), as SIDM takes 2018: data states its year,
+simulation only another one.
 `cross_sections.yaml`: `{sample name: pb}`. `run_periods.yaml`: `{year: {lumi: /pb, golden_json: file in data/}}`.
 
 Every config is a mapping of names to values, and the names are read as text: a run

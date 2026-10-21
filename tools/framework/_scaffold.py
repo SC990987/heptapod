@@ -528,6 +528,7 @@ def create_project(project: Path, *, package: Optional[str] = None, title: Optio
         "__EXAMPLE_SAMPLE__": example_sample,
         "__EXAMPLE_HIST__": render.first_hist(plan),
         "__TREE_NAME__": tree_name,
+        "__YEAR__": year or "",
     }
     try:
         generated = {
@@ -540,7 +541,7 @@ def create_project(project: Path, *, package: Optional[str] = None, title: Optio
             f"{package}/configs/cross_sections.yaml": render.render_cross_sections(every_sample),
             f"{package}/configs/samples/README.md": render.render_samples_readme(package),
             **{f"{package}/configs/samples/{config}": text for config, text in
-               render.render_sample_configs(samples, groups, package).items()},
+               render.render_sample_configs(samples, groups, package, year).items()},
             f"{package}/test_notebooks/test_processor.ipynb": render.render_notebook(
                 package, title, [s["name"] for s in shown], channels,
                 render.first_hist(plan)),

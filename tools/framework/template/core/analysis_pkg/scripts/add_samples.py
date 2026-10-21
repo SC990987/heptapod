@@ -30,8 +30,12 @@ included. An existing group is replaced only with --update; the rest of the file
 as it is. A sample name may be used in one group only, unless every use of it names its
 group (tag=...) and, when two files use the same group name, its file (location_cfg=...).
 
+A sample's year is written as SIDM writes it: always for data, and for simulation only
+when it is not the project's YEAR (analysis_pkg/__init__.py), which a sample without one
+takes, as SIDM's signal samples take 2018.
+
 Afterwards: give each simulated sample its cross section in configs/cross_sections.yaml
-and make sure the run period (--year) exists in configs/run_periods.yaml.
+and make sure the run period (--year, or YEAR) exists in configs/run_periods.yaml.
 """
 
 import argparse
@@ -44,7 +48,7 @@ import sys
 
 import yaml
 
-from analysis_pkg import BASE_DIR
+from analysis_pkg import BASE_DIR, YEAR
 
 
 def split_xrootd(url):
@@ -355,7 +359,8 @@ def main(argv=None):
                         help="name the samples after their whole directory names, without "
                              "leaving out what all of them share")
     parser.add_argument("--data", action="store_true", help="the samples are data")
-    parser.add_argument("--year", help="run period of the samples, e.g. 2018")
+    parser.add_argument("--year", help="run period of the samples, e.g. 2018 (default: YEAR "
+                                       "of the package)")
     parser.add_argument("--skim-factor", type=float, default=None,
                         help="fraction of the original events kept by a skim")
     parser.add_argument("--update", action="store_true", help="replace the group if it already exists")
@@ -433,8 +438,9 @@ def main(argv=None):
             entry["path"] = info["path"]
         if args.skim_factor is not None:
             entry["skim_factor"] = args.skim_factor
-        if args.year:
-            entry["year"] = str(args.year)
+        year = str(args.year or "") or (str(YEAR or "") if args.data else "")
+        if year and (args.data or year != str(YEAR or "")):
+            entry["year"] = year       # data states its period; simulation only another one
         block_samples[name] = entry
 
     kind = "data" if args.data else "simulation"
@@ -503,7 +509,7 @@ def main(argv=None):
               "(location_cfg=...) whenever you use them")
     if not args.data:
         print("add their cross sections (pb) to configs/cross_sections.yaml")
-    if not args.year:
+    if not args.year and not YEAR:
         print("no --year was given: simulation is only scaled, and data only finds its golden "
               "JSON, with a run period that exists in configs/run_periods.yaml")
     return 0

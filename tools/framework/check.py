@@ -303,7 +303,7 @@ class CheckAnalysisFrameworkTool(BaseTool):
             Only needed when two files use the same sample name.
         sample_file: Or a ROOT file to run on, relative to the working directory.
         is_data: Whether sample_file is data (default: decided from the file).
-        year: Run period of sample_file.
+        year: Run period of sample_file (default: the package's YEAR).
         channels: Channel to run, or a list of them (default: every channel).
         hist_collections: Histogram collection to fill, or a list of them (default:
             every collection; [] for none).
@@ -361,7 +361,8 @@ class CheckAnalysisFrameworkTool(BaseTool):
         default=None, description="ROOT file to run on instead, relative to the working directory")
     is_data: Optional[bool] = RuntimeField(
         default=None, description="Whether sample_file is data (default: decided from the file)")
-    year: Optional[Union[str, int]] = RuntimeField(default=None, description="Run period of sample_file")
+    year: Optional[Union[str, int]] = RuntimeField(
+        default=None, description="Run period of sample_file (default: the package's YEAR)")
     channels: Optional[Union[List[str], str]] = RuntimeField(
         default=None, description="Channel to run, or a list of them (default: every channel)")
     hist_collections: Optional[Union[List[str], str]] = RuntimeField(
