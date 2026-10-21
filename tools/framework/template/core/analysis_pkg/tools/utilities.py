@@ -106,11 +106,11 @@ def as_bool(value):
 
 
 def load_samples(location_cfg="samples.yaml", tag=None):
-    """Return ``{tag: block}`` for the groups of samples in a location config.
+    """Return ``{tag: block}`` for the groups of samples in one location config.
 
     ``location_cfg`` is a file under ``configs/samples/`` (or an absolute path) shaped as
-    ``{tag: {path: ..., year: ..., samples: {name: {files: [...], ...}}}}``. With
-    ``tag`` only that group is returned.
+    ``{tag: {path: ..., samples: {name: {files: [...], path: ..., ...}}}}``. With
+    ``tag`` only that group is returned. ``find_samples`` looks in every file at once.
     """
     path = resolve_path(location_cfg, "configs/samples", "configs")
     locations = {}
@@ -121,11 +121,11 @@ def load_samples(location_cfg="samples.yaml", tag=None):
         if not isinstance(block, dict) or not isinstance(samples, dict):
             raise ValueError(
                 f"{path}: group '{name}' must be laid out as "
-                "{path: ..., year: ..., samples: {<sample name>: {files: [...]}}}")
+                "{path: ..., samples: {<sample name>: {files: [...], path: ...}}}")
         for sample, cfg in samples.items():
             if cfg is not None and not isinstance(cfg, dict):
                 raise ValueError(f"{path}: sample '{sample}' of group '{name}' must be laid "
-                                 "out as {files: [...], is_data: ..., year: ..., skim_factor: ...}")
+                                 "out as {files: [...], path: ..., is_data: ..., year: ...}")
         locations[name] = {**block, "samples": {str(sample): (cfg or {})
                                                 for sample, cfg in samples.items()}}
     if tag is None:
@@ -135,19 +135,49 @@ def load_samples(location_cfg="samples.yaml", tag=None):
     return {str(tag): locations[str(tag)]}
 
 
-def make_fileset(samples, tag=None, max_files=-1, location_cfg="samples.yaml",
+def sample_configs():
+    """The location configs under configs/samples/, by file name."""
+    directory = os.path.join(BASE_DIR, "configs", "samples")
+    if not os.path.isdir(directory):
+        return []
+    return sorted(name for name in os.listdir(directory) if name.endswith((".yaml", ".yml")))
+
+
+def find_samples(location_cfg=None, tag=None):
+    """Every group of samples, as ``[(config file, tag, block), ...]``.
+
+    The samples of an analysis are spread over several configs, one per production as
+    cms-sidm/SIDM keeps them (``signal_2mu2e_v10.yaml``, ``data.yaml``, ...), and two of
+    them may well use the same tag. Without ``location_cfg`` every file under
+    ``configs/samples/`` is read; ``tag`` keeps the groups of that name.
+    """
+    names = sample_configs() if location_cfg is None else [location_cfg]
+    found = []
+    for name in names:
+        for group, block in load_samples(name).items():
+            if tag is None or group == str(tag):
+                found.append((os.path.basename(str(name)), group, block))
+    if tag is not None and not found:
+        where = f"{location_cfg}" if location_cfg is not None else "configs/samples/"
+        available = sorted({group for name in names for group in load_samples(name)})
+        raise KeyError(f"'{tag}' is not defined in {where} (available: {available})")
+    return found
+
+
+def make_fileset(samples, tag=None, max_files=-1, location_cfg=None,
                  fileset=None, replace_prefix=None):
     """Build the fileset that coffea's Runner takes.
 
-    samples: sample name or list of names defined in the location config
-    tag: which group of the location config to read. Without it every group is
-        searched, which works as long as a sample name is not used in two groups
+    samples: sample name or list of names defined in the location configs
+    tag: which group the samples belong to. Without it every group is searched, which
+        works as long as a sample name is used in one group only
     max_files: keep only the first N files of each sample (-1 keeps all)
-    location_cfg: file under configs/samples/, or an absolute path
+    location_cfg: a file under configs/samples/ (or an absolute path) to look in; by
+        default every file there is searched
     fileset: an existing fileset to extend, so that several configs can be combined
     replace_prefix: ``{old: new}`` substitutions applied to every file path, for sites
         that reach the same storage through a different door (a cache versus a
-        redirector, say)
+        redirector: ``{"root://xcache//": "root://cmseos.fnal.gov//"}``)
 
     Each sample carries the metadata the processor reads: ``is_data``, ``year`` and
     ``skim_factor`` (the fraction of the original events that survived a skim; the
@@ -158,39 +188,42 @@ def make_fileset(samples, tag=None, max_files=-1, location_cfg="samples.yaml",
     with, and a sample whose ``skim_factor`` or ``is_data`` was edited since would
     silently be processed with the old values.
     """
-    groups = load_samples(location_cfg, tag)
+    groups = find_samples(location_cfg, tag)
+    where = location_cfg if location_cfg is not None else "configs/samples/"
     if fileset is None:
         fileset = {}
     if isinstance(samples, str):
         samples = [samples]
     for sample in samples:
-        found = [name for name, group in groups.items() if sample in (group.get("samples") or {})]
+        found = [(config, group, block) for config, group, block in groups
+                 if sample in (block.get("samples") or {})]
         if not found:
-            available = sorted(s for group in groups.values() for s in (group.get("samples") or {}))
-            where = f"under '{tag}' " if tag is not None else ""
+            available = sorted(s for _, _, block in groups for s in (block.get("samples") or {}))
+            under = f"under '{tag}' " if tag is not None else ""
             raise KeyError(
-                f"sample '{sample}' is not defined {where}in {location_cfg} (available: {available})"
+                f"sample '{sample}' is not defined {under}in {where} (available: {available})"
             )
         if len(found) > 1:
+            places = [f"{config}: {group}" for config, group, _ in found]
             raise KeyError(
-                f"sample '{sample}' is defined in several groups of {location_cfg} ({found}): "
-                "pass tag=... to choose one"
+                f"sample '{sample}' is defined in several groups ({places}): pass tag=... "
+                "and, if the groups share a name, location_cfg=... to choose one"
             )
-        block = groups[found[0]]
+        location_name, _, block = found[0]
         cfg = block["samples"][sample] or {}
         base = _join(block.get("path", "") or "", cfg.get("path", "") or "")
         listed = cfg.get("files") or []
         if isinstance(listed, str):
             listed = [listed]
         if not isinstance(listed, (list, tuple)) or not all(isinstance(f, str) for f in listed):
-            raise ValueError(f"sample '{sample}': 'files' must be a list of paths in {location_cfg}")
+            raise ValueError(f"sample '{sample}': 'files' must be a list of paths in {location_name}")
         files = [f if _is_complete_path(f) else _join(base, f) for f in listed]
         for old, new in (replace_prefix or {}).items():
             files = [f.replace(old, new) for f in files]
         if max_files != -1:
             files = files[:max_files]
         if not files:
-            raise ValueError(f"sample '{sample}' has no files in {location_cfg}")
+            raise ValueError(f"sample '{sample}' has no files in {location_name}")
         skim_factor = cfg.get("skim_factor")
         skim_factor = 1.0 if skim_factor is None else float(skim_factor)
         if not skim_factor > 0:

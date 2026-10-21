@@ -8,8 +8,10 @@ the result is a set of cutflows and histograms per sample and per channel.
 
 > **Starting point, not an analysis.** The cuts in `analysis_pkg/definitions/cuts.py`
 > and the selections in `analysis_pkg/configs/selections.yaml` were generated so that
-> there is something to run. Their thresholds are placeholders: replace them with this
-> analysis's own before reading anything into a yield.
+> there is something to run. Their thresholds are placeholders (the baseline's are the
+> lepton-jet source cuts of [cms-sidm/SIDM](https://github.com/cms-sidm/SIDM): muons
+> above 5 GeV, electrons above 10 GeV, |eta| < 2.4): replace them with this analysis's
+> own before reading anything into a yield.
 
 ## Getting started
 
@@ -40,7 +42,18 @@ python -m analysis_pkg.tools.check --sample __EXAMPLE_SAMPLE__   # ... and does 
 Install it editable (`-e`): the package finds its configs relative to its own location,
 and an editable install makes your working tree the thing that is imported.
 
-Then open `analysis_pkg/test_notebooks/test_processor.ipynb`, or run it from a shell:
+Then open the first study, `analysis_pkg/studies/obj_basics/basic_histograms.ipynb`: it
+runs the baseline over a file of two simulated samples and one data sample and draws
+the pT and multiplicity of the muons and electrons (of the first two objects, without
+them) with the samples overlaid; the figures also go to `output/studies/`. To run it without opening Jupyter:
+
+```bash
+python -m pip install nbconvert ipykernel
+jupyter nbconvert --to html --execute analysis_pkg/studies/obj_basics/basic_histograms.ipynb
+```
+
+`analysis_pkg/test_notebooks/test_processor.ipynb` exercises the machinery. Or run the
+processor from a shell:
 
 ```bash
 python -m analysis_pkg.scripts.run_analysis --samples __EXAMPLE_SAMPLE__ --channels baseline --hists base -o output.coffea
@@ -58,7 +71,7 @@ Everything of interest is in `analysis_pkg/`:
 | `data/` | Golden JSONs and other small inputs. |
 | `scripts/` | Command-line entry points. |
 | `test_notebooks/` | Notebooks that exercise the machinery. Re-run them after changing the engine: the output should not move unless you meant it to. |
-| `studies/` | Where the physics happens: one notebook per study, written like a page of a lab notebook. |
+| `studies/` | Where the physics happens: one notebook per study, written like a page of a lab notebook. `obj_basics/basic_histograms.ipynb` is the first. |
 
 Definitions say what *can* be done; configs choose what *is* done. You run the
 processor by naming selections and histogram collections:
@@ -192,22 +205,36 @@ object.
 
 ### Add a sample
 
-By hand, in `analysis_pkg/configs/samples/samples.yaml` (the comments at its top describe
-the format), or from a directory listing:
+The samples are spread over files under `analysis_pkg/configs/samples/`, one per
+production as [cms-sidm/SIDM](https://github.com/cms-sidm/SIDM) keeps its ntuple configs;
+`configs/samples/README.md` there describes the layout. A list of named files goes into
+`samples.yaml` by hand; a directory of samples, local or `root://`, goes in with the
+script:
 
 ```bash
-# every sub-directory of the directory that holds ROOT files becomes one sample
-python -m analysis_pkg.scripts.add_samples -o samples.yaml -t v2 -d /path/to/ntuples --year 2018
+# one sample per sub-directory that holds ROOT files
+python -m analysis_pkg.scripts.add_samples -o signal_4mu_v10.yaml -t llpNanoAOD_v2 -c "4mu signal samples" \
+    -d root://cmseos.fnal.gov//store/group/lpcmetx/SIDM/ULSignalSamples/2018_v10/BsTo2DpTo4Mu/ \
+    --name-format "4Mu_{MBs}GeV_{MDp}GeV_{ctau}mm" --year 2018
 # ... or the directory itself is one sample
-python -m analysis_pkg.scripts.add_samples -o samples.yaml -t v2 -d root://host//store/x --name MySignal --year 2018
-# data
-python -m analysis_pkg.scripts.add_samples -o samples.yaml -t data18 -d /path/to/data --year 2018 --data
+python -m analysis_pkg.scripts.add_samples -o data.yaml -t llpNanoAOD_v2 -c "2018 data" \
+    -d /path/to/DoubleMuon --name DoubleMuon_2018C --data --year 2018
 ```
 
-`-t` names the group the samples are added as. The script rewrites the config as plain
-yaml, so comments in it are lost; point `-o` at a new file (`-o signal.yaml`) to keep
-`samples.yaml` as it is, and pass `location_cfg="signal.yaml"` to `make_fileset` (or
-`--location-cfg signal.yaml` to the scripts).
+Each sub-directory becomes a sample, with the directory its files are in as the
+sample's `path` (`<sample>/LLPnanoAODv2/`) and the bare file names under `files`; files
+sitting directly in the directory make one sample named after it. `--name-format` names
+the samples from the `KEY-VALUE` pieces of their directory names (`{MBs}` from
+`MBs-500`, `{dir}` for the whole name); without it they are named after their
+directories, leaving out the part all of them share (`--keep-names` keeps it). The
+script points out a sample whose files are in more than one directory (two dates of
+one CRAB request, say), which can be the same events twice.
+
+The group is added at the end of the file, which keeps everything else, comments
+included (comment out a file that cannot be read, as SIDM does); `--update` replaces an
+existing group. Every file under `configs/samples/` is searched for a sample: a name used
+in two groups needs `tag=...` (`--tag`), and in two files under the same group name
+also `location_cfg=...` (`--location-cfg`).
 
 Then:
 

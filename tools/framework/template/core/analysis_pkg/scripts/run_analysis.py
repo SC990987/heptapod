@@ -47,8 +47,9 @@ def main(argv=None):
         description="Run the analysis processor over configured samples.")
     parser.add_argument("--samples", nargs="+", required=True, help="sample names")
     parser.add_argument("--tag", help="group of the location config the samples belong to")
-    parser.add_argument("--location-cfg", default="samples.yaml",
-                        help="file under configs/samples/ (default: samples.yaml)")
+    parser.add_argument("--location-cfg", default=None,
+                        help="file under configs/samples/ to take the samples from "
+                             "(default: every file there)")
     parser.add_argument("--channels", nargs="+", required=True,
                         help="selections to run (configs/selections.yaml)")
     parser.add_argument("--hists", nargs="*", default=[],

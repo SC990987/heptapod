@@ -48,10 +48,14 @@ class SourceError(ValueError):
 # writing, with a way back
 # --------------------------------------------------------------------------- #
 
+class OutsideError(PermissionError):
+    """A write would go through a symbolic link, or lead out of the project."""
+
+
 class Writes:
     """File writes that are undone together if any step of an operation fails.
 
-        with Writes() as writes:
+        with Writes(root=project) as writes:
             writes.write_text(path, text)
             ...
 
@@ -59,24 +63,47 @@ class Writes:
     (or removed, if it did not exist), directories it created are removed again, and
     the exception carries on. Previous contents are held in memory, which suits the
     small text files of a project.
+
+    With ``root``, nothing is written through a symbolic link or anywhere a link would
+    lead out of ``root``: a repository the framework is written into is somebody
+    else's tree, and its links must not decide where the files go.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, root: Optional[Path] = None) -> None:
         self._before: Dict[Path, Optional[bytes]] = {}
         self._directories: List[Path] = []
+        self._root = None if root is None else Path(root)
+
+    def _guard(self, path: Path) -> None:
+        if self._root is None:
+            return
+        root = os.path.realpath(self._root)
+        if path.is_symlink():
+            raise OutsideError(f"refusing to write {path}: it is a symbolic link "
+                               f"(to {os.readlink(path)})")
+        real = os.path.realpath(path)
+        if real != root and not real.startswith(root + os.sep):
+            raise OutsideError(f"refusing to write {path}: a symbolic link on the way leads "
+                               f"out of {self._root} (to {real})")
 
     def mkdir(self, directory: Path) -> None:
         """Create a directory and the parents it lacks, remembering which were new."""
         missing = []
         current = Path(directory)
         while not current.exists():
+            if current.is_symlink():            # a link to nowhere: do not create its target
+                raise OutsideError(f"refusing to write {current}: it is a symbolic link "
+                                   f"(to {os.readlink(current)})")
             missing.append(current)
             current = current.parent
         for new in reversed(missing):
+            if self._root is not None and (new == self._root or self._root in new.parents):
+                self._guard(new)            # (the directories leading to the root are not)
             new.mkdir()
             self._directories.append(new)
 
     def _prepare(self, path: Path) -> None:
+        self._guard(path)
         if path not in self._before:
             self._before[path] = path.read_bytes() if path.is_file() else None
         self.mkdir(path.parent)

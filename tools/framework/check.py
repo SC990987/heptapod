@@ -299,7 +299,8 @@ class CheckAnalysisFrameworkTool(BaseTool):
         tag: Group of the sample config the sample belongs to. Only needed when the
             same sample name is used in two groups.
         sample_config: Name of the file under configs/samples/ that defines the
-            sample (default "samples.yaml"): a file name, not a path.
+            sample (default: every file there is searched): a file name, not a path.
+            Only needed when two files use the same sample name.
         sample_file: Or a ROOT file to run on, relative to the working directory.
         is_data: Whether sample_file is data (default: decided from the file).
         year: Run period of sample_file.
@@ -354,7 +355,8 @@ class CheckAnalysisFrameworkTool(BaseTool):
     tag: Optional[str] = RuntimeField(
         default=None, description="Group of the sample config the sample belongs to (rarely needed)")
     sample_config: Optional[str] = RuntimeField(
-        default=None, description="File under configs/samples/ defining the sample (default samples.yaml)")
+        default=None,
+        description="File under configs/samples/ defining the sample (default: every file there)")
     sample_file: Optional[str] = RuntimeField(
         default=None, description="ROOT file to run on instead, relative to the working directory")
     is_data: Optional[bool] = RuntimeField(

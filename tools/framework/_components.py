@@ -1119,7 +1119,7 @@ def apply_component(project: Path, name: str, options: Optional[Dict[str, Any]] 
             "directory that contains the analysis package.")
     marker = projects.read_marker(project) or {}
     try:
-        with projects.Writes() as writes:
+        with projects.Writes(root=project) as writes:
             result = APPLY[name](project, package, marker, dict(options or {}), overwrite, writes)
             if result.pop("record", True):
                 applied = marker.get("components")

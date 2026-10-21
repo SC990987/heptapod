@@ -195,7 +195,7 @@ def test_static_check_passes_on_a_fresh_project():
     assert selections["all"] == {"obj_cuts": {}, "evt_cuts": []}
     assert selections["baseline"]["evt_cuts"] == ["pass triggers", "PV filter"]
     assert selections["baseline_2muons"]["evt_cuts"] == ["pass triggers", "PV filter", ">=2 muons"]
-    assert selections["baseline"]["obj_cuts"]["muons"] == ["pT > 10 GeV", "|eta| < 2.4"]
+    assert selections["baseline"]["obj_cuts"]["muons"] == ["pT > 5 GeV", "|eta| < 2.4"]
     assert inventory["unused"]["hists"] == []           # every histogram is in a collection
 
 
@@ -554,7 +554,7 @@ hard_muons:
     selections = static["inventory"]["selections"]
     assert selections["hard_muons"]["obj_cuts"]["muons"] == ["pT > 30 GeV"]
     assert selections["hard_muons"]["obj_cuts"]["electrons"] == selections["baseline"]["obj_cuts"]["electrons"]
-    assert selections["baseline"]["obj_cuts"]["muons"] == ["pT > 10 GeV", "|eta| < 2.4"]
+    assert selections["baseline"]["obj_cuts"]["muons"] == ["pT > 5 GeV", "|eta| < 2.4"]
 
     utilities = _module(handle, "tools.utilities")
     fileset = utilities.make_fileset(["Signal"])
@@ -1088,6 +1088,86 @@ def test_make_fixture_leaves_out_a_branch_it_cannot_read():
     assert "Damaged" not in rewritten["branches"], rewritten["branches"]
 
 
+def test_samples_found_in_directories_and_the_first_study():
+    """The scaffold given the directories the samples live in, and its study notebook run
+    from top to bottom on them, as an analyst opening it would."""
+    _need("coffea", "awkward", "uproot", "hist", "yaml", "matplotlib", "mplhep")
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import yaml
+    from tools.framework import _samples
+    from tools.framework.tests import synthetic
+
+    base = _WORKDIR / "study"
+    base.mkdir()
+    # laid out as on EOS: one directory per simulated sample, and a data directory
+    signal_500 = "signal/SIDM_BsTo2DpTo2Mu2e_MBs-500_v3/LLPnanoAODv2"
+    signal_100 = "signal/SIDM_BsTo2DpTo2Mu2e_MBs-100_v3/LLPnanoAODv2"
+    files = {f"{signal_500}/part-0.root": (False, 11), f"{signal_500}/part-1.root": (False, 12),
+             f"{signal_100}/part-0.root": (False, 13), "DoubleMuon/output_1.root": (True, 14)}
+    for relative, (is_data, seed) in files.items():
+        path = base / "data" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        synthetic.write_nanoaod(str(path), n=200, seed=seed, data=is_data)
+    representative = str(base / "data" / signal_500 / "part-0.root")
+    layout = nanoaod_layout.split_collections(nanoaod_layout.read_tree_layout(representative)["branches"])
+    # written as cms-sidm/SIDM writes its ntuple configs: a file per production, one group
+    # name for both, and SIDM's names for the signal points
+    locations = [{"directory": str(base / "data" / "signal"), "year": "2018", "tag": "llpNanoAOD_v2",
+                  "config": "signal_2mu2e_v10.yaml", "comment": "2mu2e signal samples",
+                  "name_format": "2Mu2E_{MBs}GeV"},
+                 {"directory": str(base / "data" / "DoubleMuon"), "is_data": True, "year": "2018",
+                  "tag": "llpNanoAOD_v2", "config": "data.yaml", "comment": "2018 data",
+                  "name": "DoubleMuon_2018C"}]
+    for location in locations:
+        location["files"] = _samples.list_files(location["directory"])
+    project = base / "analysis"
+    result = scaffold.create_project(project, package="fw_study", layout=layout, year="2018",
+                                     lumi=LUMI, locations=locations, representative=representative)
+    assert result["samples"] == ["2Mu2E_100GeV", "2Mu2E_500GeV", "DoubleMuon_2018C"], result["samples"]
+    assert result["sample_configs"] == {"signal_2mu2e_v10.yaml": {"llpNanoAOD_v2": 2},
+                                        "data.yaml": {"llpNanoAOD_v2": 1}}
+    configs = project / "fw_study" / "configs" / "samples"
+    signal = yaml.safe_load((configs / "signal_2mu2e_v10.yaml").read_text())["llpNanoAOD_v2"]
+    assert signal["samples"]["2Mu2E_500GeV"] == {
+        "files": ["part-0.root", "part-1.root"], "path": "SIDM_BsTo2DpTo2Mu2e_MBs-500_v3/LLPnanoAODv2/",
+        "year": "2018"}
+    data = yaml.safe_load((configs / "data.yaml").read_text())["llpNanoAOD_v2"]
+    assert data["samples"]["DoubleMuon_2018C"]["is_data"] is True
+    assert not (configs / "samples.yaml").exists()
+
+    # the notebook, cell by cell, from its own directory (it finds the package itself)
+    notebook = project / "fw_study" / "studies" / "obj_basics" / "basic_histograms.ipynb"
+    cells = [cell for cell in json.loads(notebook.read_text())["cells"] if cell["cell_type"] == "code"]
+    namespace = {"__name__": "__main__"}
+    here = os.getcwd()
+    os.chdir(notebook.parent)
+    try:
+        for index, cell in enumerate(cells):
+            source = "\n".join(line for line in "".join(cell["source"]).splitlines()
+                               if not line.lstrip().startswith("%"))
+            exec(compile(source, f"<study cell {index}>", "exec"), namespace)
+            plt.close("all")
+    finally:
+        os.chdir(here)
+    out = namespace["out"]
+    # the sample of the file the framework was matched to comes first; the samples are
+    # found in whichever config they are in
+    assert namespace["read"] == ["2Mu2E_500GeV", "2Mu2E_100GeV", "DoubleMuon_2018C"]
+    # one file per sample was read: two hundred events each
+    assert {s: out[s]["metadata"]["n_evts"] for s in namespace["read"]} == \
+        {"2Mu2E_100GeV": 200, "2Mu2E_500GeV": 200, "DoubleMuon_2018C": 200}
+    # the baseline the notebook printed is the scaffold's: muons above 5 GeV, electrons above 10
+    assert namespace["selection_cuts"]["obj"]["muons"] == ["pT > 5 GeV", "|eta| < 2.4"]
+    assert namespace["selection_cuts"]["obj"]["electrons"] == ["pT > 10 GeV", "|eta| < 2.4"]
+    # every signal muon is above 5 GeV and the soft ones below it: two per event
+    muon_n = out["2Mu2E_500GeV"]["hists"]["muon_n"][{"channel": "baseline"}]
+    assert _close(muon_n.values()[2], muon_n.values().sum()), muon_n.values()
+    for figure in ("basic_pt.png", "basic_multiplicity.png", "muon_eta_phi.png"):
+        assert (project / "output" / "studies" / figure).stat().st_size > 0, figure
+
+
 def test_scaleout_ships_the_package_and_dask_gives_the_same_answer():
     # coffea's DaskExecutor imports dask.dataframe, which needs pandas and pyarrow
     _need("coffea", "dask", "distributed", "dask.dataframe")
@@ -1197,7 +1277,7 @@ def test_check_tool_runs_the_generated_checker():
     assert report["ok"] is True and report["run"]["ok"] is True, report
     # the cuts of the channel that was asked about, and of that one only
     assert list(report["static"]["selections"]) == ["baseline_2muons"]
-    assert report["static"]["selections"]["baseline_2muons"]["obj_cuts"]["muons"] == ["pT > 10 GeV", "|eta| < 2.4"]
+    assert report["static"]["selections"]["baseline_2muons"]["obj_cuts"]["muons"] == ["pT > 5 GeV", "|eta| < 2.4"]
     dataset = report["run"]["datasets"]["Signal"]
     assert dataset["empty_in_channels"] == {}
     assert dataset["n_events"] == 200 and dataset["empty_hists"] == []

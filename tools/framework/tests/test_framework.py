@@ -9,6 +9,7 @@ Whether a generated framework actually runs is tested in test_framework_run.py.
 """
 import ast
 import contextlib
+import importlib
 import io
 import json
 import os
@@ -223,7 +224,7 @@ def test_yaml_configs_parse():
     plan = render.build_plan(specs, triggers=["IsoMu24"])
     selections = yaml.safe_load(render.render_selections(plan))
     assert selections["all"] == {"obj_cuts": {}, "evt_cuts": []}
-    assert selections["baseline"]["obj_cuts"]["muons"] == ["pT > 10 GeV", "|eta| < 2.4"]
+    assert selections["baseline"]["obj_cuts"]["muons"] == ["pT > 5 GeV", "|eta| < 2.4"]
     assert selections["baseline_2muons"]["evt_cuts"] == [["pass triggers", "PV filter"], ">=2 muons"]
     collections = yaml.safe_load(render.render_hist_collections(plan))
     assert collections["muon_base"][-1] == "muon_muon_invmass"
@@ -236,16 +237,44 @@ def test_yaml_configs_parse():
     assert yaml.safe_load(uncommented) == {"2018": {"lumi": 0.0}}
     assert yaml.safe_load(render.render_run_periods(None, None, None)) is None
     assert yaml.safe_load(render.render_cross_sections([])) is None
-    assert yaml.safe_load(render.render_samples([], "main", None)) == {"main": {"path": "", "samples": None}}
-    assert "analysis_pkg" not in render.render_samples([], "main", None, "mypkg")
+    configs = render.render_sample_configs([], [])
+    assert list(configs) == ["samples.yaml"]
+    assert yaml.safe_load(configs["samples.yaml"]) == {"main": {"path": "", "samples": None}}
+    assert "analysis_pkg" not in render.render_sample_configs([], [], "mypkg")["samples.yaml"]
     samples = [{"name": "Sig-1", "files": ["/a/b.root"], "is_data": False, "xsec": 0.5, "year": "2018",
                 "skim_factor": 0.25},
                {"name": "Data", "files": ["x.root", "y.root"], "is_data": True, "xsec": None,
                 "year": "2017", "skim_factor": None}]
     assert yaml.safe_load(render.render_cross_sections(samples)) == {"Sig-1": 0.5}
-    block = yaml.safe_load(render.render_samples(samples, "main", "2018"))["main"]
-    assert block["year"] == "2018" and block["samples"]["Sig-1"]["skim_factor"] == 0.25
+    block = yaml.safe_load(render.render_sample_configs(samples, [])["samples.yaml"])["main"]
+    assert block["samples"]["Sig-1"] == {"files": ["/a/b.root"], "skim_factor": 0.25, "year": "2018"}
     assert block["samples"]["Data"] == {"files": ["x.root", "y.root"], "is_data": True, "year": "2017"}
+    # a location's group, line for line as in cms-sidm/SIDM's signal_2mu2e_v10.yaml
+    point = "CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-100_MDp-0p25_ctau-0p02_v3"
+    group = {"tag": "llpNanoAOD_v2", "config": "signal_2mu2e_v10.yaml",
+             "comment": "2mu2e signal samples with correct lifetime and no unwanted gen filters",
+             "path": "root://xcache//store/group/lpcmetx/SIDM/ULSignalSamples/2018_v10/BsTo2DpTo2Mu2e/",
+             "samples": [{"name": "2Mu2E_100GeV_0p25GeV_0p02mm", "path": f"{point}/LLPnanoAODv2/",
+                          "files": [f"{point}_part-0.root", f"{point}_part-1.root"],
+                          "is_data": False, "year": None, "skim_factor": None}]}
+    assert render.render_sample_configs([], [group]) == {"signal_2mu2e_v10.yaml": (
+        "# 2mu2e signal samples with correct lifetime and no unwanted gen filters\n"
+        "llpNanoAOD_v2:\n"
+        "  path: root://xcache//store/group/lpcmetx/SIDM/ULSignalSamples/2018_v10/BsTo2DpTo2Mu2e/\n"
+        "  samples:\n"
+        "    2Mu2E_100GeV_0p25GeV_0p02mm:\n"
+        "      files:\n"
+        f"      - {point}_part-0.root\n"
+        f"      - {point}_part-1.root\n"
+        f"      path: {point}/LLPnanoAODv2/\n")}
+    # what yaml would read as something else is quoted, and reads back as it was
+    tricky = {**group, "tag": "2018", "samples": [{**group["samples"][0], "name": "on", "is_data": True,
+                                                   "files": ["a b.root", "true", "1e5"], "year": "2018",
+                                                   "skim_factor": 0.5}]}
+    assert yaml.safe_load(render.render_sample_configs([], [tricky])["signal_2mu2e_v10.yaml"]) == {
+        "2018": {"path": group["path"], "samples": {"on": {
+            "files": ["a b.root", "true", "1e5"], "is_data": True, "path": f"{point}/LLPnanoAODv2/",
+            "skim_factor": 0.5, "year": "2018"}}}}
     # no countable objects at all: the files must still be valid
     lonely = render.build_plan([nanoaod_layout.object_spec("met", "MET", LAYOUT)])
     assert yaml.safe_load(render.render_selections(lonely))["baseline"] == {"obj_cuts": {}, "evt_cuts": [[]]}
@@ -270,8 +299,10 @@ def test_project_is_complete_and_has_no_placeholders():
                          "definitions/weights.py", "configs/selections.yaml",
                          "configs/hist_collections.yaml", "configs/cross_sections.yaml",
                          "configs/run_periods.yaml", "configs/samples/samples.yaml",
+                         "configs/samples/README.md",
                          "scripts/run_analysis.py", "scripts/add_samples.py",
-                         "test_notebooks/test_processor.ipynb", "studies/README.md", "data/README.md"):
+                         "test_notebooks/test_processor.ipynb", "studies/README.md", "data/README.md",
+                         "studies/obj_basics/basic_histograms.ipynb"):
             top_level = relative in ("README.md", "setup.py", "requirements.txt", ".gitignore", "MANIFEST.in")
             path = project / relative if top_level else project / package / relative
             assert path.is_file(), relative
@@ -293,6 +324,509 @@ def test_project_is_complete_and_has_no_placeholders():
         assert wrapped == ["dsaMuons"]
         notes = " ".join(result["notes"])
         assert "muon mass" in notes and "polar set" in notes and "boostedTau" in notes
+
+
+def test_the_baseline_and_the_first_study_follow_sidm():
+    # the baseline object cuts are cms-sidm/SIDM's lepton sources, and the first study
+    # plots the basic histograms of the muons and electrons of the configured samples
+    yaml = _yaml()
+    with tempfile.TemporaryDirectory() as tmp:
+        result = _create(tmp, samples=[{"name": "Sig", "files": ["/s.root"]},
+                                       {"name": "Sig2", "files": ["/s2.root"]},
+                                       {"name": "Bkg", "files": ["/b.root"]},
+                                       {"name": "Data", "files": ["/d.root"], "is_data": True}])
+        project, package = Path(tmp) / "demo_analysis", result["package"]
+        selections = yaml.safe_load((project / package / "configs/selections.yaml").read_text())
+        assert selections["baseline"]["obj_cuts"]["muons"] == ["pT > 5 GeV", "|eta| < 2.4"]
+        assert selections["baseline"]["obj_cuts"]["electrons"] == ["pT > 10 GeV", "|eta| < 2.4"]
+        assert result["layout"]["study"] == f"{package}/studies/obj_basics/basic_histograms.ipynb"
+        notebook = json.loads((project / result["layout"]["study"]).read_text())
+        code = "\n".join("".join(c["source"]) for c in notebook["cells"] if c["cell_type"] == "code")
+        # two simulated samples and the data sample, as the processor knows them
+        assert 'samples = ["Sig", "Sig2", "Data"]' in code
+        hists = (project / package / "definitions/hists.py").read_text()
+        collections = yaml.safe_load((project / package / "configs/hist_collections.yaml").read_text())
+        for name in ("muon_pt", "electron_pt", "muon_n", "electron_n", "muon_eta_phi"):
+            assert f'"{name}"' in code and f'"{name}":' in hists, name
+        assert 'hist_collections = ["muon_base", "electron_base"]' in code
+        assert {"muon_base", "electron_base"} <= set(collections)
+        assert "plot_row" in code and "plotting.plot_samples" in code and "build_cuts" in code
+    # without samples, and without muons or electrons, it still says what to fill in
+    with tempfile.TemporaryDirectory() as tmp:
+        result = _create(tmp, objects={"jets": "Jet"}, include_default_objects=False)
+        notebook = json.loads((Path(tmp) / "demo_analysis" / result["layout"]["study"]).read_text())
+        code = "\n".join("".join(c["source"]) for c in notebook["cells"] if c["cell_type"] == "code")
+        assert 'samples = ["SAMPLE_NAME"]' in code and '"jet_pt"' in code
+    # with nothing to count (a MET only), it runs the base collection and draws nothing
+    with tempfile.TemporaryDirectory() as tmp:
+        result = _create(tmp, objects={"met": "MET"}, include_default_objects=False)
+        notebook = json.loads((Path(tmp) / "demo_analysis" / result["layout"]["study"]).read_text())
+        code = "\n".join("".join(c["source"]) for c in notebook["cells"] if c["cell_type"] == "code")
+        assert 'hist_collections = ["base"]' in code and "fig = plot_row(" not in code
+        assert "base" in yaml.safe_load((Path(tmp) / "demo_analysis" / result["package"] /
+                                         "configs/hist_collections.yaml").read_text())
+        compile(code.replace("%matplotlib inline", ""), "study", "exec")
+
+
+def test_sample_locations_become_groups_laid_out_like_sidm():
+    yaml = _yaml()
+    from tools.framework import _samples
+    with tempfile.TemporaryDirectory() as tmp:
+        data = Path(tmp) / "data"
+        layout = {"signal/A_500GeV/nano/part-0.root", "signal/A_500GeV/nano/part-1.root",
+                  "signal/B_100GeV/nano/part-0.root", "signal/readme.txt", "DoubleMuon/out_1.root",
+                  "DoubleMuon/out_2.root", "mixed/x.root", "mixed/sub/y.root"}
+        for relative in layout:
+            (data / relative).parent.mkdir(parents=True, exist_ok=True)
+            (data / relative).write_bytes(b"")
+        listed = {name: _samples.list_files(str(data / name)) for name in ("signal", "DoubleMuon", "mixed")}
+        assert listed["signal"] == ["A_500GeV/nano/part-0.root", "A_500GeV/nano/part-1.root",
+                                    "B_100GeV/nano/part-0.root"]
+        locations = [{"directory": str(data / "signal") + "/", "files": listed["signal"], "year": 2018},
+                     {"directory": str(data / "DoubleMuon"), "files": listed["DoubleMuon"],
+                      "is_data": True}]
+        result = _create(tmp, locations=locations, year="2018",
+                         samples=[{"name": "Extra", "files": ["/e.root"]}])
+        assert result["samples"] == ["Extra", "A_500GeV", "B_100GeV", "DoubleMuon"]
+        # a config per location, as cms-sidm/SIDM keeps one per production
+        assert result["sample_configs"] == {"samples.yaml": {"main": 1}, "signal.yaml": {"signal": 2},
+                                            "DoubleMuon.yaml": {"DoubleMuon": 1}}
+        package = Path(tmp) / "demo_analysis" / result["package"]
+        configs = {path.name: yaml.safe_load(path.read_text())
+                   for path in (package / "configs/samples").glob("*.yaml")}
+        assert sorted(configs) == ["DoubleMuon.yaml", "samples.yaml", "signal.yaml"]
+        assert configs["samples.yaml"]["main"]["samples"] == {"Extra": {"files": ["/e.root"], "year": "2018"}}
+        config = configs["signal.yaml"]
+        assert list(config) == ["signal"] and config["signal"]["path"] == str(data / "signal") + "/"
+        # the directory a sample's files are in is its path, as in cms-sidm/SIDM's configs
+        assert config["signal"]["samples"]["A_500GeV"] == {
+            "files": ["part-0.root", "part-1.root"], "path": "A_500GeV/nano/", "year": "2018"}
+        assert configs["DoubleMuon.yaml"]["DoubleMuon"]["samples"] == {
+            "DoubleMuon": {"files": ["out_1.root", "out_2.root"], "is_data": True, "year": "2018"}}
+        text = (package / "configs/samples/signal.yaml").read_text()
+        assert text.startswith(f"# 2 simulation sample(s) found below {data / 'signal'}/\nsignal:\n  path: ")
+        assert "      files:\n      - part-0.root\n" in text           # SIDM's plain layout
+        assert (package / "configs/samples/README.md").is_file()
+        notes = " ".join(result["notes"])
+        assert "were registered as the group 'signal' of" in notes and "configs/samples/signal.yaml" in notes
+        crosses = (package / "configs/cross_sections.yaml").read_text()
+        assert '# "A_500GeV": 1.0' in crosses and "DoubleMuon" not in crosses
+        # the generated script groups a directory the same way
+        sys.path.insert(0, str(Path(tmp) / "demo_analysis"))
+        try:
+            add_samples = importlib.import_module(f"{result['package']}.scripts.add_samples")
+            # a group comes out of the script as the scaffold writes it, line for line
+            group = configs["signal.yaml"]["signal"]
+            mine = render.render_sample_configs([], [{
+                "tag": "signal", "config": "signal.yaml", "comment": "a comment", "path": group["path"],
+                "samples": [{"name": name, "is_data": name == "B_100GeV", "skim_factor": 0.5, **entry}
+                            for name, entry in group["samples"].items()]}])["signal.yaml"]
+            theirs = add_samples.render_group(
+                "signal", group["path"], {name: {**entry, "is_data": name == "B_100GeV", "skim_factor": 0.5}
+                                          for name, entry in group["samples"].items()}, "a comment")
+            assert mine == "\n".join(theirs) + "\n"
+            names = [f"X_MBs-{m}_ctau-{c}_v3" for m, c in ((1000, "0p2"), (100, "10p0"), (100, "0p02"), (150, "2p0"))]
+            assert sorted(names, key=add_samples.natural_key) == sorted(names, key=_samples.natural_key) == [
+                "X_MBs-100_ctau-0p02_v3", "X_MBs-100_ctau-10p0_v3", "X_MBs-150_ctau-2p0_v3", "X_MBs-1000_ctau-0p2_v3"]
+            assert add_samples.formatted_names(names, "A_{MBs}GeV_{ctau}mm") == \
+                _samples.formatted_names(names, "A_{MBs}GeV_{ctau}mm")
+            # the script adds a group at the end of a config and keeps what is there, its
+            # comments included (SIDM comments out files that cannot be read); --update
+            # replaces the group in place
+            cfg = Path(tmp) / "added.yaml"
+            cfg.write_text("# my production\nolder:\n  path: /old/\n  samples:\n    Old:\n      files:\n"
+                           "      # - bad.root  # LZMA Corrupt input data\n      - good.root\n")
+            with contextlib.redirect_stdout(io.StringIO()):
+                assert add_samples.main(["-o", str(cfg), "-t", "v1", "-d", str(data / "signal"),
+                                         "-c", "signal points", "--year", "2018",
+                                         "--name-format", "S_{dir}"]) == 0
+            text = cfg.read_text()
+            assert text.startswith("# my production\nolder:\n") and "# - bad.root  # LZMA" in text
+            assert "\n\n\n# signal points\nv1:\n" in text, text
+            assert yaml.safe_load(text)["v1"]["samples"]["S_A_500GeV"] == {
+                "files": ["part-0.root", "part-1.root"], "path": "A_500GeV/nano/", "year": "2018"}
+            with contextlib.redirect_stdout(io.StringIO()):
+                assert add_samples.main(["-o", str(cfg), "-t", "older", "-d", str(data / "DoubleMuon"),
+                                         "--name", "DoubleMuon_2018C", "--data", "--update"]) == 0
+            text = cfg.read_text()
+            assert text.startswith("# my production\nolder:\n  path: ") and "bad.root" not in text, text
+            assert yaml.safe_load(text)["older"]["samples"] == {
+                "DoubleMuon_2018C": {"files": ["out_1.root", "out_2.root"], "is_data": True}}
+            assert "# signal points\nv1:" in text
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    add_samples.main(["-o", str(cfg), "-t", "v1", "-d", str(data / "signal")])
+            except SystemExit as exc:
+                assert "already exists" in str(exc)
+            else:
+                raise AssertionError("an existing group was replaced without --update")
+            assert add_samples.list_root_files(str(data / "signal")) == listed["signal"]
+            crab = ["DY/req/260630_045316/0000/a.root", "DY/req/260630_045316/0001/b.root",
+                    "TT/req/260601_000001/0000/c.root", "TT/req/260711_012627/0000/d.root"]
+            for files, args in ((listed["signal"], ()), (listed["DoubleMuon"], (None, "DoubleMuon")),
+                                (listed["signal"], ("All",)), (crab, ())):
+                assert add_samples.group_by_sample(files, *args) == \
+                    _samples.group_by_sample(files, *args), (files, args)
+                for info in _samples.group_by_sample(files, *args).values():
+                    assert add_samples.productions(info["files"]) == _samples.productions(info["files"])
+            # CRAB's numbered blocks are one production; two dates are two
+            grouped = _samples.group_by_sample(crab)
+            assert grouped["DY"] == {"path": "DY/req/260630_045316/",
+                                     "files": ["0000/a.root", "0001/b.root"]}
+            assert _samples.productions(grouped["DY"]["files"]) == [""]
+            assert _samples.productions(grouped["TT"]["files"]) == ["260601_000001", "260711_012627"]
+            assert _samples.productions(["2017/a.root", "2018/b.root"]) == ["2017", "2018"]
+            # names without what all of them share, cut at an underscore, as SIDM shortens them
+            sidm = ["CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3",
+                    "CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-1000_MDp-1p2_ctau-0p02_v3"]
+            # names that cannot be sample names are made into ones the same way
+            for text in ("-B_sample", "My Sample A", "on", "A_", "ok.name", "x/y", "ünï", "_", "2018"):
+                expected = text if render.sample_name_problem(text) is None else render.sample_name_from(text)
+                assert add_samples.valid_name(text) == expected, text
+            for names, expected in ((sidm, ["MBs-500_MDp-0p25_ctau-0p4", "MBs-1000_MDp-1p2_ctau-0p02"]),
+                                    (["DY_M-50_Tune_x", "TT_Tune_x"], ["DY_M-50", "TT"]),
+                                    (["A_500GeV", "B_100GeV"], ["A_500GeV", "B_100GeV"]),
+                                    (["x_y", "x_y_y"], ["x_y", "x_y_y"]),       # one would be empty
+                                    (["only_one"], ["only_one"])):
+                for shorten in (_samples.shortened_names, add_samples.shortened_names):
+                    assert list(shorten(names).values()) == expected, (shorten, names)
+            for mixed in (listed["mixed"],):
+                for group in (add_samples.group_by_sample, _samples.group_by_sample):
+                    try:
+                        group(mixed)
+                    except ValueError as exc:
+                        assert "sit directly" in str(exc)
+                    else:
+                        raise AssertionError(f"{group} grouped {mixed}")
+        finally:
+            sys.path.pop(0)
+            for name in [m for m in sys.modules if m.startswith(result["package"])]:
+                del sys.modules[name]
+        # what cannot be grouped, or would be ambiguous, is refused before anything is written
+        for location, expected in (
+                ({"directory": str(data / "mixed"), "files": listed["mixed"]}, "sit directly"),
+                ({"directory": str(data / "signal"), "files": listed["signal"], "xsec": 2.0},
+                 "'xsec' is for one sample"),
+                ({"directory": str(data / "signal"), "files": []}, "no ROOT files"),
+                ({"directory": str(data / "signal"), "files": listed["signal"], "bogus": 1},
+                 "unknown key"),
+                ({"files": listed["signal"]}, "needs a 'directory'")):
+            message = _refused(scaffold.ScaffoldError, _create, tmp, name="refused", locations=[location])
+            assert expected in message, (expected, message)
+            assert not (Path(tmp) / "refused").exists()
+        # 'main' is the group of samples.yaml that holds the samples given file by file
+        extra = [{"name": "Extra", "files": ["/e.root"]}]
+        named = _create(tmp, name="r5", samples=extra,
+                        locations=[{"directory": "/x/more", "files": listed["signal"], "config": "samples.yaml"}])
+        config = yaml.safe_load((Path(tmp) / "r5" / named["package"] / "configs/samples/samples.yaml").read_text())
+        assert list(config) == ["main", "more"] and list(config["main"]["samples"]) == ["Extra"]
+        assert "file by file" in _refused(scaffold.ScaffoldError, _create, tmp, name="r6", samples=extra,
+                                          locations=[{"directory": "/x/y", "files": listed["signal"],
+                                                      "tag": "main", "config": "samples.yaml"}])
+        twice = [{"directory": str(data / "signal"), "files": listed["signal"], "tag": "t", "config": "s.yaml"},
+                 {"directory": str(data / "signal"), "files": listed["signal"], "tag": "t", "config": "s.yaml"}]
+        assert "both write the group 't' of s.yaml" in _refused(scaffold.ScaffoldError, _create, tmp,
+                                                               name="r2", locations=twice)
+        twice[1]["tag"] = "u"
+        assert "defined twice" in _refused(scaffold.ScaffoldError, _create, tmp, name="r3", locations=twice)
+        for config in ("../up.yaml", "a/b.yaml", "notes.txt", ".hidden.yaml"):
+            assert "must be the name of a .yaml file" in _refused(
+                scaffold.ScaffoldError, _create, tmp, name="r4",
+                locations=[{"directory": "/x/y", "files": listed["signal"], "config": config}]), config
+        # a whole directory as one sample, with a cross section
+        one = _create(tmp, name="one", locations=[{"directory": str(data / "signal"),
+                                                   "files": listed["signal"], "name": "AllSignal",
+                                                   "xsec": 1.5, "tag": "sig"}])
+        config = yaml.safe_load((Path(tmp) / "one" / one["package"] / "configs/samples/signal.yaml").read_text())
+        assert config["sig"]["samples"]["AllSignal"]["files"] == listed["signal"]
+        assert '"AllSignal": 1.5' in (Path(tmp) / "one" / one["package"] / "configs/cross_sections.yaml").read_text()
+        # CRAB output: the numbered blocks of one request are one sample; two dates are
+        # pointed out, since they can be the same events twice
+        crab = ["DY/req/260630_045316/0000/a.root", "DY/req/260630_045316/0001/b.root",
+                "TT/req/260601_000001/0000/c.root", "TT/req/260711_012627/0000/d.root"]
+        result = _create(tmp, name="crab", locations=[{"directory": "/eos/crab", "files": crab}])
+        config = yaml.safe_load((Path(tmp) / "crab" / result["package"] / "configs/samples/crab.yaml").read_text())
+        assert config["crab"]["samples"]["DY"] == {"path": "DY/req/260630_045316/",
+                                                   "files": ["0000/a.root", "0001/b.root"]}
+        notes = " ".join(result["notes"])
+        assert "more than one directory" in notes and "TT (260601_000001/, 260711_012627/)" in notes
+        assert "DY (" not in notes
+        # sample names leave out what the directories share; the directory stays in the path,
+        # and the sample of the file the framework was matched to comes first in the notebooks
+        sig = [f"SIDM_BsTo2DpTo2Mu2e_MBs-{m}_v3/LLPnanoAODv2/part-0.root" for m in (100, 500)]
+        bkg = ["DY_M-50_Tune_x/nano/a.root", "TT_Tune_x/nano/b.root"]
+        result = _create(tmp, name="short", representative="root://eos.example///store/sig//"
+                                                           "SIDM_BsTo2DpTo2Mu2e_MBs-500_v3/LLPnanoAODv2/part-0.root",
+                         locations=[{"directory": "root://eos.example//store/sig/", "files": sig},
+                                    {"directory": "root://eos.example//store/bkg", "files": bkg},
+                                    {"directory": "root://eos.example//store/sig4mu/", "files": sig}])
+        assert result["samples"][:4] == ["MBs-100", "MBs-500", "DY_M-50", "TT"], result["samples"]
+        # a third location whose short names are taken keeps its directory names
+        assert result["samples"][4:] == ["SIDM_BsTo2DpTo2Mu2e_MBs-100_v3", "SIDM_BsTo2DpTo2Mu2e_MBs-500_v3"]
+        package = Path(tmp) / "short" / result["package"]
+        config = yaml.safe_load((package / "configs/samples/sig.yaml").read_text())
+        assert config["sig"]["samples"]["MBs-500"]["path"] == "SIDM_BsTo2DpTo2Mu2e_MBs-500_v3/LLPnanoAODv2/"
+        notes = " ".join(result["notes"])
+        assert "'SIDM_BsTo2DpTo2Mu2e_MBs-100_v3' is 'MBs-100'" in notes, notes
+        study = json.loads((package / "studies/obj_basics/basic_histograms.ipynb").read_text())
+        code = "\n".join("".join(c["source"]) for c in study["cells"] if c["cell_type"] == "code")
+        assert 'samples = ["MBs-500", "MBs-100"]' in code, code
+        assert "--sample MBs-500" in (Path(tmp) / "short" / "README.md").read_text()
+        # named the way cms-sidm/SIDM names its signal points, two productions in two files
+        # under one group name, each with the comment above it
+        sig = [f"CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-{m}_MDp-0p25_ctau-{c}_v3/LLPnanoAODv2/x_part-0.root"
+               for m, c in ((500, "0p4"), (100, "10p0"), (100, "0p02"))]
+        fourmu = [path.replace("2Mu2e", "4Mu") for path in sig]
+        result = _create(tmp, name="sidm", year="2018", locations=[
+            {"directory": "root://xcache//store/2018_v10/BsTo2DpTo2Mu2e/", "files": sig, "tag": "llpNanoAOD_v2",
+             "config": "signal_2mu2e_v10.yaml", "comment": "2mu2e signal samples",
+             "name_format": "2Mu2E_{MBs}GeV_{MDp}GeV_{ctau}mm"},
+            {"directory": "root://xcache//store/2018_v10/BsTo2DpTo4Mu/", "files": fourmu, "tag": "llpNanoAOD_v2",
+             "config": "signal_4mu_v10.yaml", "name_format": "4Mu_{MBs}GeV_{MDp}GeV_{ctau}mm"}])
+        assert result["samples"][:3] == ["2Mu2E_100GeV_0p25GeV_0p02mm", "2Mu2E_100GeV_0p25GeV_10p0mm",
+                                         "2Mu2E_500GeV_0p25GeV_0p4mm"], result["samples"]
+        assert result["sample_configs"] == {"signal_2mu2e_v10.yaml": {"llpNanoAOD_v2": 3},
+                                            "signal_4mu_v10.yaml": {"llpNanoAOD_v2": 3}}
+        text = (Path(tmp) / "sidm" / result["package"] / "configs/samples/signal_2mu2e_v10.yaml").read_text()
+        assert text.startswith("# 2mu2e signal samples\nllpNanoAOD_v2:\n"
+                               "  path: root://xcache//store/2018_v10/BsTo2DpTo2Mu2e/\n  samples:\n"
+                               "    2Mu2E_100GeV_0p25GeV_0p02mm:\n      files:\n      - x_part-0.root\n"
+                               "      path: CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-100_MDp-0p25_ctau-0p02_v3/"
+                               "LLPnanoAODv2/\n      year: \"2018\"\n"), text
+        assert "named by name_format" in " ".join(result["notes"])
+        for location, expected in (({"name_format": "2Mu2E_{MBs}GeV_{mass}"}, "has no mass"),
+                                   ({"name_format": "2Mu2E_{MDp}GeV"}, "names both"),
+                                   ({"name_format": "2Mu2E_{MBs!r}"}, "write each field"),
+                                   ({"name_format": "2Mu2E"}, "has no {field}"),
+                                   ({"name_format": "x_{MBs}", "name": "All"}, "not both")):
+            assert expected in _refused(scaffold.ScaffoldError, _create, tmp, name="r7", locations=[
+                {"directory": "/x/BsTo2DpTo2Mu2e", "files": sig, **location}]), expected
+
+
+def test_the_tool_lists_sample_locations():
+    scaffold_tool = _tools()[0]
+    yaml = _yaml()
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = os.path.realpath(tmp)
+        for relative in ("data/sig/A/f1.root", "data/sig/B/f2.root"):
+            Path(tmp, relative).parent.mkdir(parents=True, exist_ok=True)
+            Path(tmp, relative).write_bytes(b"")
+        out = json.loads(scaffold_tool(base_directory=tmp, project_dir="p", sample_locations=[
+            {"directory": "data/sig", "year": "2018"}])._run())
+        assert out["status"] == "ok" and out["samples"] == ["A", "B"], out
+        assert out["sample_configs"] == {"sig.yaml": {"sig": 2}}
+        config = yaml.safe_load(Path(tmp, "p", "p", "configs/samples/sig.yaml").read_text())
+        assert config["sig"]["path"] == os.path.join(tmp, "data", "sig") + "/"
+        # root:// directories are listed with xrdfs: here a stand-in that answers like it
+        bin_dir = Path(tmp, "bin")
+        bin_dir.mkdir()
+        fake = bin_dir / "xrdfs"
+        fake.write_text("#!/bin/sh\n"
+                        "echo /store/user/x/sig/S1/nano/a.root\n"
+                        "echo /store/user/x/sig/S1/nano/b.root\n"
+                        "echo /store/user/x/sig/S1/nano\n"
+                        "echo /store/user/x/sig/S2/c.root\n")
+        fake.chmod(0o755)
+        path = os.environ.get("PATH", "")
+        os.environ["PATH"] = str(bin_dir) + os.pathsep + path
+        try:
+            # repeated slashes are one, as the storage reads them
+            out = json.loads(scaffold_tool(base_directory=tmp, project_dir="q", sample_locations=[
+                {"directory": "root://eos.example//store//user/x/sig//", "tag": "v1"}])._run())
+            fake.write_text("#!/bin/sh\necho '[ERROR] Auth failed' >&2\nexit 54\n")
+            failed = scaffold_tool(base_directory=tmp, project_dir="r", sample_locations=[
+                {"directory": "root://eos.example//store/user/x/sig/"}])._run()
+        finally:
+            os.environ["PATH"] = path
+        assert out["status"] == "ok" and out["samples"] == ["S1", "S2"], out
+        config = yaml.safe_load(Path(tmp, "q", "q", "configs/samples/sig.yaml").read_text())
+        assert config["v1"]["path"] == "root://eos.example//store/user/x/sig/"
+        assert config["v1"]["samples"]["S1"] == {"path": "S1/nano/", "files": ["a.root", "b.root"]}
+        assert config["v1"]["samples"]["S2"] == {"path": "S2/", "files": ["c.root"]}
+        assert "Listing Failed" in failed and "Auth failed" in failed and not Path(tmp, "r").exists()
+        # locations outside the working directory, or that are not directories, are refused
+        for directory, expected in ((os.path.dirname(tmp), "outside the working directory"),
+                                    ("data/sig/A/f1.root", "not a directory"),
+                                    ("nowhere", "not a directory")):
+            refused = scaffold_tool(base_directory=tmp, project_dir="s", sample_locations=[
+                {"directory": directory}])._run()
+            assert expected in refused, (directory, refused)
+        assert "found by listing" in scaffold_tool(base_directory=tmp, project_dir="s", sample_locations=[
+            {"directory": "data/sig", "files": ["x.root"]}])._run()
+        assert not Path(tmp, "s").exists()
+
+
+def test_the_framework_is_built_and_committed_in_a_git_repository():
+    scaffold_tool = _tools()[0]
+    import shutil
+    import subprocess
+    from tools.framework import _git
+    if shutil.which("git") is None:
+        _skip("git is not installed")
+    identity = {"GIT_AUTHOR_NAME": "Analyst", "GIT_AUTHOR_EMAIL": "analyst@example.org",
+                "GIT_COMMITTER_NAME": "Analyst", "GIT_COMMITTER_EMAIL": "analyst@example.org"}
+    # no identity at all: no config files, and git told not to make one up
+    anonymous = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_COUNT": "1",
+                 "GIT_CONFIG_KEY_0": "user.useConfigOnly", "GIT_CONFIG_VALUE_0": "true"}
+    saved = {key: os.environ.get(key) for key in [*identity, *anonymous, "EMAIL"]}
+    saved_timeout = _git.LOCAL_TIMEOUT
+    os.environ.update(identity)
+
+    def git(*args, cwd=None):
+        return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout
+
+    def bare(name, readme=None, ignore=None):
+        """A repository on the forge, inside the working directory: file:// urls must be."""
+        remote = os.path.join(work, "forge", name)
+        git("init", "-q", "--bare", remote)
+        if readme is not None:
+            seed = os.path.join(tmp, "seed_" + name)
+            git("clone", "-q", remote, seed)
+            Path(seed, "README.md").write_text(readme)
+            if ignore is not None:
+                Path(seed, ".gitignore").write_text(ignore)
+            git("add", "-A", cwd=seed)
+            git("commit", "-qm", "start", cwd=seed)
+            git("push", "-q", "origin", "HEAD", cwd=seed)
+        return "file://" + remote
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = os.path.realpath(tmp)
+            work = os.path.join(tmp, "work")
+            os.makedirs(work)
+            # a new repository on the forge: a short README and a .gitignore
+            url = bare("my-analysis.git", "# my-analysis\n\nThe search.\n", "*.pyc\n/output/\n")
+            remote = url[len("file://"):]
+
+            # a failure after the clone leaves nothing behind
+            refused = scaffold_tool(base_directory=work, repo=url, triggers=["not a path"])._run()
+            assert "Invalid Request" in refused and os.listdir(work) == ["forge"], refused
+
+            out = json.loads(scaffold_tool(base_directory=work, repo=url, project_title="SIDM demo")._run())
+            assert out["status"] == "ok" and out["project"] == "my-analysis", out
+            info = out["git"]
+            assert info["cloned_from"] == url and info["commit"], info
+            assert info["push"] == "git -C my-analysis push -u origin HEAD", info
+            clone = Path(work, "my-analysis")
+            assert git("status", "--porcelain", cwd=clone) == ""          # all of it committed
+            assert git("log", "-1", "--format=%s", cwd=clone).strip() == "Add the SIDM demo analysis framework"
+            assert git("rev-list", "--count", "HEAD", cwd=clone).strip() == "2"    # nothing pushed
+            assert git("rev-list", "--count", "HEAD", cwd=remote).strip() == "1"
+            committed = git("show", "--name-only", "--format=", "HEAD", cwd=clone).split()
+            assert "my_analysis/studies/obj_basics/basic_histograms.ipynb" in committed
+            assert ".analysis_framework.json" in committed and ".gitignore" in committed
+            # the repository's .gitignore gains what it lacked; a short README is replaced
+            ignore = (clone / ".gitignore").read_text()
+            assert ignore.startswith("*.pyc\n/output/\n") and ignore.count("/output/") == 1
+            assert "*.coffea" in ignore
+            assert out["files_replaced"] == ["README.md"]
+            assert "SIDM demo" in (clone / "README.md").read_text()
+            # building again in the same clone is refused: it holds the framework now
+            again = scaffold_tool(base_directory=work, repo=url)._run()
+            assert "already holds the analysis framework" in again
+            # a directory of that name that is a clone of something else is not built in
+            other = bare("other.git", "# other\n")
+            assert "not of" in scaffold_tool(base_directory=work, repo=other, project_dir="my-analysis")._run()
+
+            # a clone already in the working directory, given by its path, with a README of
+            # its own: kept, and the framework's README goes next to it. Work the analyst
+            # had staged stays staged and out of the commit.
+            local = Path(work, "local")
+            git("init", "-q", str(local))
+            (local / "README.md").write_text("# Mine\n\nline one\nline two\nline three\n")
+            (local / "notes.txt").write_text("mine\n")
+            git("add", "notes.txt", cwd=local)
+            out = json.loads(scaffold_tool(base_directory=work, repo="local")._run())
+            assert out["status"] == "ok" and out["git"]["commit"] and out["git"]["push"] is None
+            assert "no remote" in out["git"]["note"]
+            assert (local / "README.md").read_text().startswith("# Mine")
+            assert (local / "FRAMEWORK.md").is_file() and "README.md" not in out["files_replaced"]
+            committed = git("show", "--name-only", "--format=", "HEAD", cwd=local).split()
+            assert "notes.txt" not in committed and "FRAMEWORK.md" in committed
+            assert git("diff", "--cached", "--name-only", cwd=local).split() == ["notes.txt"]
+
+            # files of the analyst's are not replaced unasked, and links are not written through
+            mine = Path(work, "mine")
+            git("init", "-q", str(mine))
+            (mine / "setup.py").write_text("# my own setup\n")
+            refused = scaffold_tool(base_directory=work, repo="mine")._run()
+            assert "already has ['setup.py']" in refused and "overwrite" in refused, refused
+            assert sorted(os.listdir(mine)) == [".git", "setup.py"]
+            outside = Path(tmp, "outside.txt")
+            outside.write_text("not yours\n")
+            (mine / "setup.py").unlink()
+            (mine / "setup.py").symlink_to(os.path.relpath(outside, mine))
+            refused = scaffold_tool(base_directory=work, repo="mine", overwrite=True)._run()
+            assert "symbolic link" in refused and outside.read_text() == "not yours\n", refused
+            assert sorted(os.listdir(mine)) == [".git", "setup.py"]
+            (mine / "setup.py").unlink()
+            (mine / "setup.py").write_text("# my own setup\n")
+            out = json.loads(scaffold_tool(base_directory=work, repo="mine", overwrite=True)._run())
+            assert out["status"] == "ok" and "setup.py" in out["files_replaced"], out
+
+            # what the repository's .gitignore excludes is left out of the commit, and named
+            ignoring = Path(work, "ignoring")
+            git("init", "-q", str(ignoring))
+            (ignoring / ".gitignore").write_text("data/\n")
+            out = json.loads(scaffold_tool(base_directory=work, repo="ignoring")._run())
+            assert out["git"]["commit"] and "ignoring/data/README.md" in out["git"]["note"], out["git"]
+            committed = git("show", "--name-only", "--format=", "HEAD", cwd=ignoring).split()
+            assert "ignoring/definitions/cuts.py" in committed and "ignoring/data/README.md" not in committed
+
+            # a hook that hangs: stopped, and the files are left staged
+            hooked = Path(work, "hooked")
+            git("init", "-q", str(hooked))
+            hook = hooked / ".git" / "hooks" / "pre-commit"
+            hook.write_text("#!/bin/sh\nsleep 30\n")
+            hook.chmod(0o755)
+            _git.LOCAL_TIMEOUT = 3
+            out = json.loads(scaffold_tool(base_directory=work, repo="hooked")._run())
+            _git.LOCAL_TIMEOUT = saved_timeout
+            assert out["status"] == "ok" and out["git"]["commit"] is None, out["git"]
+            assert "took longer than 3 s" in out["git"]["note"], out["git"]
+            assert ".analysis_framework.json" in git("diff", "--cached", "--name-only", cwd=hooked).split()
+            assert not (hooked / ".git" / "index.lock").exists()      # the analyst can commit
+
+            # what is not a repository, or not a usable url, is refused
+            os.makedirs(os.path.join(work, "plain"))
+            for repo, expected in (("plain", "Not A Repository"), ("../elsewhere", "Access Denied"),
+                                   ("https://exa mple.org/x.git", "Invalid Request"),
+                                   ("file://" + os.path.join(tmp, "away.git"), "Access Denied")):
+                assert expected in scaffold_tool(base_directory=work, repo=repo)._run(), repo
+            assert "project_dir" in scaffold_tool(base_directory=work)._run()
+            missing = scaffold_tool(base_directory=work, repo="file://" + os.path.join(work, "forge", "none.git"),
+                                    project_dir="none")._run()
+            assert "Clone Failed" in missing and not os.path.exists(os.path.join(work, "none"))
+            # an empty directory given for the clone is left empty after a failed clone
+            os.makedirs(os.path.join(work, "waiting"))
+            missing = scaffold_tool(base_directory=work, repo="file://" + os.path.join(work, "forge", "none.git"),
+                                    project_dir="waiting")._run()
+            assert "Clone Failed" in missing and os.listdir(os.path.join(work, "waiting")) == []
+
+            # a repository just made on the forge, with no commit yet
+            empty = bare("empty.git")
+            out = json.loads(scaffold_tool(base_directory=work, repo=empty)._run())
+            assert out["status"] == "ok" and out["project"] == "empty" and out["git"]["commit"], out
+            assert out["git"]["branch"] and out["git"]["push"] == "git -C empty push -u origin HEAD"
+            assert git("rev-list", "--count", "HEAD", cwd=os.path.join(work, "empty")).strip() == "1"
+
+            # without a git identity the framework is written and staged, not committed
+            for key in [*identity, "EMAIL"]:
+                os.environ.pop(key, None)
+            os.environ.update(anonymous)
+            out = json.loads(scaffold_tool(base_directory=work, repo=url, project_dir="anonymous")._run())
+            assert out["status"] == "ok" and out["git"]["commit"] is None, out
+            assert "not committed" in out["git"]["note"] and out["git"]["push"] is None
+            staged = git("diff", "--cached", "--name-only", cwd=os.path.join(work, "anonymous")).split()
+            assert ".analysis_framework.json" in staged and f"{out['package']}/configs/selections.yaml" in staged
+    finally:
+        _git.LOCAL_TIMEOUT = saved_timeout
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def test_project_without_a_sample_file_assumes_standard_nanoaod():
@@ -382,7 +916,7 @@ def test_user_text_is_written_as_given():
         project, package = Path(tmp) / "demo_analysis", result["package"]
         samples = yaml.safe_load((project / package / "configs/samples/samples.yaml").read_text("utf8"))
         block = samples["main"]
-        assert block["year"] == "2018" and block["samples"]["Sig_M-500"]["files"] == [path]
+        assert block["samples"]["Sig_M-500"]["year"] == "2018" and block["samples"]["Sig_M-500"]["files"] == [path]
         assert "is_data" not in block["samples"]["Sig_M-500"]       # the text "false" is not true
         assert block["samples"]["Data"]["is_data"] is True
         xsecs = yaml.safe_load((project / package / "configs/cross_sections.yaml").read_text())
@@ -693,7 +1227,7 @@ def test_lepton_jet_blocks_agree_with_each_other():
             return
         selections = yaml.safe_load((package / "configs" / "selections.yaml").read_text())
         assert selections["baseline_2ljs"]["obj_cuts"]["ljs"] == ["pT > 30 GeV", "|eta| < 2.4"]
-        assert selections["baseline_2ljs"]["obj_cuts"]["muons"] == ["pT > 10 GeV", "|eta| < 2.4"]
+        assert selections["baseline_2ljs"]["obj_cuts"]["muons"] == ["pT > 5 GeV", "|eta| < 2.4"]
         assert selections["baseline_2ljs"]["evt_cuts"][-1] == ">=2 ljs"
 
 
@@ -1198,7 +1732,7 @@ def test_scaffold_and_component_tools():
                                        samples=[{"name": "S", "files": files, "xsec": 1}])._run())
         assert out["status"] == "ok", out
         text = (Path(tmp) / "e" / "e" / "configs" / "samples" / "samples.yaml").read_text()
-        listed = re.findall(r'^\s+- "(.*)"$', text, flags=re.M)
+        listed = _yaml().safe_load(text)["main"]["samples"]["S"]["files"]
         assert listed == [os.path.join(tmp, "data", "a.root"), os.path.join(tmp, "data", "missing.root"),
                           "/abs/b.root", "root://host//store/c.root"], listed
         assert any("missing.root was not found" in note for note in out["notes"])
@@ -1259,7 +1793,7 @@ def test_scaffold_and_component_tools():
                                        samples=[{"name": "S", "files": ["link/f.root"]}])._run())
         assert out["status"] == "ok"
         text = (Path(base) / "ana" / "ana" / "configs" / "samples" / "samples.yaml").read_text()
-        assert f'- "{os.path.join(outside, "f.root")}"' in text
+        assert _yaml().safe_load(text)["main"]["samples"]["S"]["files"] == [os.path.join(outside, "f.root")]
         # a project that is itself a link to somewhere outside is not touched either
         os.rename(os.path.join(base, "ana"), os.path.join(outside, "moved"))
         os.symlink(os.path.join(outside, "moved"), os.path.join(base, "ana"))

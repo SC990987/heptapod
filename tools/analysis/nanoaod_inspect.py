@@ -52,7 +52,8 @@ class InspectFileTool(BaseTool):
     Use `require` to verify that the branches or collections an analysis needs exist.
 
     Args:
-        root_path: The ROOT file, relative to the working directory.
+        root_path: The ROOT file, relative to the working directory, or a root:// url
+            (reading one needs fsspec-xrootd and xrootd in the toolkit's environment).
         tree_name: TTree to inspect (default "Events").
         collection: Return every field of this collection.
         branch_pattern: Return the branch names matching this shell-style pattern.
@@ -78,7 +79,8 @@ class InspectFileTool(BaseTool):
     """
 
     # --------------------------- Runtime fields --------------------------- #
-    root_path: str = RuntimeField(description="ROOT file to inspect, relative to the working directory")
+    root_path: str = RuntimeField(
+        description="ROOT file to inspect, relative to the working directory, or a root:// url")
     tree_name: str = RuntimeField(default="Events", description="TTree to inspect")
     collection: Optional[str] = RuntimeField(
         default=None, description="Return every field of this collection, e.g. 'Muon'")
@@ -146,25 +148,30 @@ class InspectFileTool(BaseTool):
         return out
 
     def _run(self) -> str:
-        src = self._safe_path(self.root_path)
+        remote = isinstance(self.root_path, str) and self.root_path.startswith("root://")
+        src = self.root_path if remote else self._safe_path(self.root_path)
         if not src:
             return self.format_error(
                 error="Access Denied", reason="root_path escapes the working directory",
                 context=f"root_path={self.root_path}",
-                suggestion="Use a path relative to the working directory")
-        if not os.path.exists(src):
+                suggestion="Use a path relative to the working directory, or a root:// url")
+        if not remote and not os.path.exists(src):
             return self.format_error(
                 error="File Not Found", reason="the ROOT file does not exist",
                 context=f"root_path={self.root_path}",
-                suggestion="Check the path; files outside the working directory must be copied or linked in")
+                suggestion="Check the path; files outside the working directory must be copied "
+                           "or linked in, or read by their root:// url")
         try:
             layout = nanoaod_layout.read_tree_layout(src, self.tree_name)
         except ImportError as exc:
             return self.format_error(
                 error="Missing Dependency",
                 reason=f"the ROOT file could not be read: {exc}",
-                suggestion="Reading ROOT files needs uproot (and what it depends on); it is "
-                           "part of the coffea and framework bundles")
+                suggestion=("Reading root:// needs fsspec-xrootd and xrootd in the toolkit's "
+                            "environment (<python> -m pip install fsspec-xrootd xrootd), or "
+                            "copy the file into the working directory" if remote else
+                            "Reading ROOT files needs uproot (and what it depends on); it is "
+                            "part of the coffea and framework bundles"))
         except KeyError as exc:
             return self.format_error(
                 error="Tree Not Found", reason=str(exc.args[0]) if exc.args else str(exc),

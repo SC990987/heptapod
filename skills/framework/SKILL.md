@@ -1,7 +1,7 @@
 ---
 name: framework
 bundle: framework
-description: Build a coffea analysis framework for a new analysis and extend it — a python package with a processor, named cuts and histograms, selections and histogram collections chosen in yaml, samples, cutflows, normalisation and a self-check. Use whenever the user wants an analysis framework, analysis repository or analysis code set up or scaffolded, wants to start a new analysis on NanoAOD or NanoAOD-like ROOT files, or asks to add or change a cut, selection, channel, control region, histogram, object, sample, trigger or scale factor in a framework built this way, to run it, or to plot from it. Also use for its optional parts — lepton jets, scaling out with dask or HTCondor at the LPC, a custom NanoAOD schema for extra collections and cross-references, and a regression report with CI. For one-off columnar questions on a single file, use the `coffea` skill instead.
+description: Build a coffea analysis framework for a new analysis and extend it — a python package with a processor, named cuts and histograms, selections and histogram collections chosen in yaml, samples, cutflows, normalisation, a first study notebook and a self-check, written into the user's git repository if they give one, with the sample configs made from the directories their simulation and data live in. Use whenever the user wants an analysis framework, analysis repository or analysis code set up or scaffolded, wants to start a new analysis on NanoAOD or NanoAOD-like ROOT files, or asks to add or change a cut, selection, channel, control region, histogram, object, sample, trigger or scale factor in a framework built this way, to run it, or to plot from it. Also use for its optional parts — lepton jets, scaling out with dask or HTCondor at the LPC, a custom NanoAOD schema for extra collections and cross-references, and a regression report with CI. For one-off columnar questions on a single file, use the `coffea` skill instead.
 ---
 
 # Building an analysis framework
@@ -20,7 +20,8 @@ my_analysis/
 │   ├── data/           golden JSONs, correction files
 │   ├── scripts/        run_analysis, add_samples, merge_outputs
 │   ├── test_notebooks/ exercising the machinery
-│   └── studies/        one notebook per physics study
+│   └── studies/        one notebook per physics study; the first is
+│                       obj_basics/basic_histograms.ipynb (muon and electron pT, ...)
 └── README.md, setup.py, requirements.txt
 ```
 
@@ -57,15 +58,28 @@ show the user the error in full instead of working around it in the definitions.
 
 1. **Look at the file.** `InspectFile` on a representative ROOT file. Note the exact
    collection names, anything listed under `schema_notes`, and the trigger paths you
-   need (`branch_pattern="HLT_*Mu*"`).
+   need (`branch_pattern="HLT_*Mu*"`). If you were given directories rather than a
+   file, take one file of a simulated sample from them (`ls -R`, or
+   `xrdfs <host> ls -R <path>` for `root://`); a `root://` url can be read directly
+   when the toolkit's environment has `fsspec-xrootd` and `xrootd`.
 2. **Scaffold once.** `ScaffoldAnalysisFramework` with `sample_file`, the extra
    `objects` the analysis needs beyond the standard ones, `triggers`, and `year`,
    `lumi` and `golden_json` if you were given them (`lumi` and `golden_json` are only
-   accepted together with `year`). Read the `notes` it returns. Once is meant
-   literally: the tool refuses a directory that already holds a framework, whatever
-   `overwrite` says, because scaffolding again would replace the analysis written
-   into it. From here on the framework changes through its own files and through
-   `AddFrameworkComponent`.
+   accepted together with `year`). Where it goes: `repo` when the user names a git
+   repository (its url, which the tool clones, or a clone in the working directory),
+   else a new `project_dir`. Where the events are: `sample_locations`, one entry per
+   directory the user named, `{"directory": ..., "is_data": ..., "year": ...}`, local
+   or `root://`; every sub-directory holding ROOT files becomes a sample (give `name`
+   when the whole directory is one sample). Each location gets a config file of its
+   own under `configs/samples/`, laid out as cms-sidm/SIDM's ntuple configs. When the
+   user names the files, groups or sample names they want, or shows a config to copy,
+   pass `config` (`"signal_2mu2e_v10.yaml"`), `tag` (`"llpNanoAOD_v2"`), `comment`
+   and `name_format` (`"2Mu2E_{MBs}GeV_{MDp}GeV_{ctau}mm"`: fields are the `KEY-VALUE`
+   pieces of the directory names). Single files go in `samples`. Read the
+   `notes` it returns. Once is meant literally: the tool refuses a directory that
+   already holds a framework, whatever `overwrite` says, because scaffolding again
+   would replace the analysis written into it. From here on the framework changes
+   through its own files and through `AddFrameworkComponent`.
 3. **Check.** `CheckAnalysisFramework` with `sample=` (a short run): a simulated
    sample, and a data sample too when there is one, because some warnings only show
    on one of them. One call takes both names. Its answer includes the static
@@ -84,7 +98,12 @@ show the user the error in full instead of working around it in the definitions.
 6. **Hand over.** Say how to run it (the README has the commands), which cuts and
    thresholds are still the scaffold's placeholders, what is still missing (cross
    sections, luminosity, golden JSON), and what the last check reported, warnings
-   included.
+   included. Point to the first study, `studies/obj_basics/basic_histograms.ipynb`,
+   which runs the baseline over a file of two simulated samples and one data sample
+   and plots the muon and electron pT. In a repository, the scaffold's answer has a `git` entry: give the
+   commit and the push command it holds. The tool never pushes, and neither do you
+   unless the user asks: they look at the commit first. Changes you make afterwards
+   are not committed either unless the user asks.
 
 **Coming back to a framework that exists.** Most requests arrive later: a histogram,
 a cut, a channel, a sample. Steps 1 and 2 are then done, and this file with the one
@@ -104,10 +123,12 @@ there, where, and what the check shows for it.
 
 What in a scaffolded framework is a placeholder: the pT and |eta| thresholds, the
 `baseline` selection and the two-object channel, the histogram binnings, and any mass
-marked "an assumption" in `objects.py`. What is not: the scaffold never invents a
-cross section, a luminosity, a golden JSON or a trigger path, so a value found in
-`cross_sections.yaml` or `run_periods.yaml`, or a path in the "pass triggers" cut, was
-given by someone. `.analysis_framework.json` records what the scaffold was given
+marked "an assumption" in `objects.py`. The baseline's object cuts are cms-sidm/SIDM's
+lepton-jet source cuts (muons above 5 GeV and electrons above 10 GeV with |eta| < 2.4,
+photons above 20 GeV with |eta| < 2.5): a common starting point, not this analysis's
+choice. What is not: the scaffold never invents a cross section, a luminosity, a
+golden JSON or a trigger path, so a value found in `cross_sections.yaml` or
+`run_periods.yaml`, or a path in the "pass triggers" cut, was given by someone. `.analysis_framework.json` records what the scaffold was given
 (objects and their collections, tree, trigger paths, sample names) and the components
 added since. Edits made by hand do not update it, and nothing breaks when it lags
 behind.
@@ -243,7 +264,9 @@ already does those jobs, so do not bring them in.
 - **Keep physics out of `tools/`.** If you find yourself editing `processor.py` to
   make one analysis work, the change belongs in `definitions/`.
 - **Notebooks are the user's.** Leave `test_notebooks/` and `studies/` as they are
-  unless asked: a new channel does not need to be added to the test notebook.
+  unless asked: a new channel does not need to be added to the test notebook, nor
+  to the first study. A new study is a new notebook in `studies/`, built like
+  `obj_basics/basic_histograms.ipynb`.
 - **When you build a coffea `Runner` yourself** (a notebook, a script), give it
   `metadata_cache={}` as the generated code does. Otherwise coffea reuses, for the
   rest of the python session, the `is_data`, `year` and `skim_factor` a file was

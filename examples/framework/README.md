@@ -5,9 +5,10 @@ extends it on request.
 
 ## What this toolkit does
 
-Given a NanoAOD-like ROOT file and a description of the analysis, the
-`framework` bundle writes a [coffea](https://coffea-hep.readthedocs.io)
-analysis package:
+Given your git repository, the directories your simulation and data live in, a
+NanoAOD-like ROOT file and a description of the analysis, the `framework` bundle
+writes a [coffea](https://coffea-hep.readthedocs.io) analysis package into the
+repository (or into a new directory) and commits it:
 
 ```
 my_analysis/
@@ -19,6 +20,7 @@ my_analysis/
 │   ├── scripts/        run_analysis, add_samples, merge_outputs
 │   ├── test_notebooks/ exercising the machinery
 │   └── studies/        one notebook per physics study
+│       └── obj_basics/basic_histograms.ipynb   the first: muon and electron pT, ...
 └── README.md, setup.py, requirements.txt
 ```
 
@@ -26,6 +28,18 @@ The engine is the same for every analysis and contains no physics. The analysis
 lives in `definitions/` (named objects, cuts and histograms, as small python
 functions) and `configs/` (which of them each selection and histogram collection
 uses). Running the analysis is naming selections and histogram collections.
+
+It starts where [cms-sidm/SIDM](https://github.com/cms-sidm/SIDM) starts. Each
+directory of samples becomes a config of its own under `configs/samples/`, written as
+SIDM's ntuple configs are (`signal_2mu2e_v10.yaml`: a comment, the group, the directory
+as its path, one sample per sub-directory with its files and the directory they are
+in), with SIDM's sample names when asked (`2Mu2E_500GeV_0p25GeV_0p4mm`). The baseline
+selection applies SIDM's lepton-jet source cuts (muons above 5 GeV and electrons
+above 10 GeV, |eta| < 2.4). And `studies/obj_basics/basic_histograms.ipynb`, written
+like SIDM's `studies/obj_basics` notebooks, runs the baseline over a file of two
+simulated samples and one data sample and draws the muon and electron pT and
+multiplicity with the samples overlaid. In a git repository the framework is committed once, on the current
+branch, and never pushed: the answer gives the command.
 
 Extending it is asking for it. Once the framework exists, "I want a histogram of the
 electron pT" or "add a cut on the jets, in a new channel" needs no further tool: the
@@ -116,6 +130,22 @@ only those directly inside it.
 Without `ANALYSIS_DATA` the agent can still scaffold a framework (standard
 NanoAOD is assumed), but nothing can be run until a file is there.
 
+Samples on EOS need no link. A `root://` directory given as a sample location is
+listed with the `xrdfs` command, which the LPC has. Reading a `root://` file (to
+inspect it, or for the check's short run) needs an XRootD client in the toolkit's
+environment, which `tb install` does not add:
+
+```bash
+PY=$(grep -h '^python_path:' ~/.toolbase/cache/heptapod/*/.install_meta.yaml | head -1 | awk '{print $2}')
+$PY -m pip install fsspec-xrootd xrootd
+```
+
+To build in a git repository the tool server needs `git`, a way to clone it (an
+https url for a public repository, an ssh key for a private one: git is run
+without a terminal, so nothing can ask for a password), and your git identity for
+the commit. Without an identity the framework is written and staged, and the
+answer says how to commit it.
+
 ### 3. Ask for a framework
 
 See `task_prompt.md` for prompts to start from. The system prompt is at
@@ -136,7 +166,10 @@ objects and histograms).
 
 ## Taking the result with you
 
-The generated directory is self-contained: it does not import HEPTAPOD.
+The generated directory is self-contained: it does not import HEPTAPOD. Built in your
+repository, it is a clone in the sandbox with one new commit: look at it, then push
+(`git -C <clone> push -u origin HEAD`, the command the scaffold's answer gives). Built
+in a new directory, copy it out:
 
 ```bash
 cp -r examples/framework/sandbox001/my_analysis ~/my_analysis && cd ~/my_analysis
@@ -144,6 +177,15 @@ git init
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt && pip install -e .
 python -m my_analysis.tools.check --sample <NAME>
+```
+
+The first study runs in any environment that has coffea (which brings matplotlib
+and mplhep): open it in Jupyter, or run it from a shell and look at the figures in
+`output/studies/`:
+
+```bash
+pip install nbconvert ipykernel
+jupyter nbconvert --to html --execute my_analysis/studies/obj_basics/basic_histograms.ipynb
 ```
 
 ## Status
@@ -158,6 +200,8 @@ launcher has not been tried with `--harness codex` or `opencode`. Treat a failin
 check on a freshly scaffolded project as a possible fault of the generator, not only
 of the analysis.
 [tools/framework/README.md](../../tools/framework/README.md#verification-status)
-lists what was and was not checked and the commands that check it.
+lists what was and was not checked and the commands that check it. Building in a git
+repository, sample locations and the first study were added after the third check at
+the LPC and have so far run only on stand-ins for the libraries.
 
 This example has no recorded transcript yet.

@@ -410,26 +410,47 @@ wrapped collection a position stored as `x`, `y`, `z` is available as `vx`, `vy`
 
 ## Add a sample
 
-By hand, in `PKG/configs/samples/samples.yaml` (the comment at its top shows the
-format): that is the way for a list of named files. The paths are wherever the
-analysis reads the files from (an absolute path, a `root://` URL); the rule that a
-tool's arguments stay inside the working directory is not about them. Or from a
-directory listing:
+The samples are spread over files under `PKG/configs/samples/`, one per production as
+cms-sidm/SIDM keeps its ntuple configs (`signal_2mu2e_v10.yaml`, `data.yaml`); their
+layout is in `PKG/configs/samples/README.md`. A list of named files goes into
+`samples.yaml` by hand. The paths are wherever the analysis reads the files from (an
+absolute path, a `root://` URL); the rule that a tool's arguments stay inside the
+working directory is not about them. A directory of samples goes in with the script,
+as SIDM's `add_ntuples.py` does it:
 
 ```bash
-# one sample per sub-directory that holds ROOT files
-python -m PKG.scripts.add_samples -o samples.yaml -t v2 -d /path/to/dir --year 2018
-# the directory itself as one sample
-python -m PKG.scripts.add_samples -o samples.yaml -t v2 -d root://host//store/... --name MySample --year 2018
-# data
-python -m PKG.scripts.add_samples -o samples.yaml -t data18 -d /path/to/data --year 2018 --data
+# one sample per sub-directory that holds ROOT files, named as SIDM names its signal points
+python -m PKG.scripts.add_samples -o signal_4mu_v10.yaml -t llpNanoAOD_v2 -c "4mu signal samples" \
+    -d root://cmseos.fnal.gov//store/group/lpcmetx/SIDM/ULSignalSamples/2018_v10/BsTo2DpTo4Mu/ \
+    --name-format "4Mu_{MBs}GeV_{MDp}GeV_{ctau}mm" --year 2018
+# the directory itself as one sample: data
+python -m PKG.scripts.add_samples -o data.yaml -t llpNanoAOD_v2 -c "2018 data" \
+    -d /path/to/DoubleMuon --name DoubleMuon_2018C --data --year 2018
 ```
 
-`-t` is the name of the group the samples are added as (`--update` replaces a group
-that exists). The script **rewrites the config file as plain yaml**: comments in it
-are lost. Use `-o other.yaml` to leave `samples.yaml` untouched; such a file is then
-read with `location_cfg="other.yaml"` (python) or `--location-cfg other.yaml`
-(scripts, and `sample_config` of `CheckAnalysisFramework`).
+`-o` is the file, `-t` the group in it (two files may use the same group name, as
+SIDM's do), `-c` the comment written above the group. Each sub-directory becomes a
+sample, with the directory its files are in as the sample's `path`
+(`<sample>/LLPnanoAODv2/`, `<dataset>/<request>/<date>/0000/`); files sitting directly
+in the directory make one sample named after it. This is also what the scaffold's
+`sample_locations` wrote. `--name-format` names the samples from the `KEY-VALUE`
+pieces of their directory names (`MBs-500` gives `{MBs}`, `{dir}` is the whole name);
+without it they are named after the directories without the part all of them share
+(`..._MBs-500_MDp-0p25_ctau-0p4_v3` among its siblings is `MBs-500_MDp-0p25_ctau-0p4`;
+`--keep-names` keeps the whole names). Change one with `--rename OLD=NEW`, or by editing
+its key in the yaml (and in `cross_sections.yaml`). The script says when the files of
+one sample are in more than one directory (two dates of one CRAB request, two versions
+side by side): that can be the same events twice, so look, and keep one.
+
+The script adds the group at the end of the file and leaves the rest as it is, comments
+included: a file that cannot be read can be commented out (`# - ..._part-7.root`), as
+SIDM does. `--update` replaces a group that exists, in place.
+
+Every file under `configs/samples/` is searched: `utilities.make_fileset(["A", "B"])`,
+the scripts and the check find a sample by its name wherever it is. A name used in two
+groups needs its group, `tag="v2"` (`--tag`, `tag` of `CheckAnalysisFramework`), and in
+two files under the same group name also its file, `location_cfg="signal.yaml"`
+(`--location-cfg`, `sample_config`); the check's warnings say when.
 
 Then:
 

@@ -6,7 +6,7 @@ analysis, plus the file-inspection tool they rely on:
 | Tool | Module | Does |
 |------|--------|------|
 | `InspectFileTool` | `tools/analysis/nanoaod_inspect.py` | Reports the collections of a NanoAOD-like file and what will need care when coffea reads it |
-| `ScaffoldAnalysisFrameworkTool` | `scaffold.py` | Writes the framework, matched to a representative file |
+| `ScaffoldAnalysisFrameworkTool` | `scaffold.py` | Writes the framework, matched to a representative file, into the analyst's git repository (cloned, committed, never pushed) or a new directory, with sample configs listed from the directories the samples live in |
 | `AddFrameworkComponentTool` | `components.py` | Adds `lepton_jets`, `scaleout`, `schema` or `chain_report` |
 | `CheckAnalysisFrameworkTool` | `check.py` | Runs the framework's own self-check and returns its report |
 
@@ -25,12 +25,93 @@ my_analysis/
 │   ├── configs/        rendered: selections, hist collections, samples, cross sections, run periods
 │   ├── scripts/        copied: run_analysis, add_samples, merge_outputs
 │   ├── test_notebooks/ rendered: test_processor.ipynb
-│   └── data/, studies/
+│   ├── studies/        rendered: obj_basics/basic_histograms.ipynb, the first study
+│   └── data/
 ├── .analysis_framework.json     what the project was built from (objects, samples, tree, components)
 └── README.md, setup.py, requirements.txt, MANIFEST.in, .gitignore
 ```
 
 The generated project does not import HEPTAPOD. It is the user's code from then on.
+
+## Where it goes, where the samples come from, what it starts with
+
+These follow [cms-sidm/SIDM](https://github.com/cms-sidm/SIDM), the framework this
+one was generalised from, wherever SIDM has a convention.
+
+**A git repository** (`repo`). A url (`https://`, `ssh://`, `git@host:owner/name.git`,
+or `file://` inside the working directory) is cloned into the working directory,
+under `project_dir` or the repository's name; a clone already there is used if it is
+the top of a work tree, a clone of that url, and not an interrupted clone. The
+framework is written at the top of the clone, which may already hold files: a
+`.gitignore` there gets the framework's entries appended, a `README.md` of more than
+three non-empty lines is kept and the framework's README is written as
+`FRAMEWORK.md`, a shorter one is replaced. Any other file the framework would replace
+(`setup.py`, `requirements.txt`, ...) is refused unless `overwrite` is given, and
+nothing is written through a symbolic link of the repository. The files written are
+then committed, and only they, in one commit on the current branch with your git
+identity; whatever else was staged stays staged. Files the repository's `.gitignore`
+excludes are left out and named. Nothing is pushed: the answer's `git` entry gives
+the commit, the branch, the remote and the push command. Without an identity, or
+when a hook refuses or takes longer than a minute, the files are left staged and the
+answer says so. git runs in a session of its own, without a terminal or an askpass
+program and with ssh in batch mode, so a remote that wants a password fails at once;
+a clone that takes longer than two minutes is stopped with everything it started.
+A failed call removes the clone it made.
+
+**Sample locations** (`sample_locations`). Each entry names a directory: a `root://`
+url, listed with `xrdfs <host> ls -R` (the command must be on the PATH; 120 s per
+directory), or a local directory inside the working directory, walked. Each becomes a
+config file of its own under `configs/samples/`, laid out exactly as SIDM's ntuple
+configs: a comment line (`comment`), the group (`tag`, e.g. `llpNanoAOD_v2`; two files
+may share it, as SIDM's do) with the directory as its `path`, and one sample per
+sub-directory holding ROOT files, with its bare file names under `files`, then
+`is_data`, the directory its files are in as its `path` (`<sample>/LLPnanoAODv2/`,
+`<dataset>/<request>/<date>/0000/`), `skim_factor` and `year`. Strings are plain where
+yaml reads them back unchanged, as in SIDM's files. The samples come in SIDM's order,
+numbers compared as numbers with `p` as the decimal point (0p02, 0p2, 2p0, 10p0).
+`config` names the file (default: the directory's name), and `name_format` the samples:
+its fields are the `KEY-VALUE` pieces of the directory names, so that
+`2Mu2E_{MBs}GeV_{MDp}GeV_{ctau}mm` gives `CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3`
+SIDM's name, `2Mu2E_500GeV_0p25GeV_0p4mm`. Without it, a sample is named after its
+directory without the part all the directories share (`MBs-500_MDp-0p25_ctau-0p4`; the
+whole name is kept when shortening would clash with another location's samples). Given
+the file lists of the two signal configs of SIDM's 2018 v10 production
+(`signal_2mu2e_v10.yaml`, 90 samples, 4,356 lines, and `signal_4mu_v10.yaml`, 5,234
+lines) with SIDM's `config`, `tag`, `comment` and `name_format`, the scaffold wrote both
+files line for line as SIDM has them, except one stray blank line in each and the
+files SIDM commented out by hand as unreadable, which a listing cannot know about.
+Files sitting directly in the directory make one sample named after it; next to
+sub-directories they are refused as ambiguous. `name` makes the
+whole directory one sample (and allows an `xsec`), `tag` names the group (default:
+the directory's name), `is_data`, `year` and `skim_factor` apply to every sample of
+the location. A sample whose files are spread over more than one directory, other
+than CRAB's numbered blocks (two dates of one request, two versions), is pointed out
+in the notes: it can hold the same events twice. The generated
+`scripts/add_samples.py` lists, groups, names and writes a directory in the same way
+(`-c` the comment, `--name-format`, `--keep-names`), adding the group at the end of a
+file and keeping the rest of it, comments included, as SIDM's `add_ntuples.py` does; so
+groups added later look like the first ones. The engine searches every file under
+`configs/samples/` for a sample by name (`utilities.find_samples`); `tag` and
+`location_cfg` choose when a name is used twice. The sample of `sample_file`, when it is one of those listed, comes first in the
+notebooks and in the commands the README shows.
+
+**The starting selection.** The baseline object cuts are SIDM's lepton-jet source
+cuts: muons pT > 5 GeV, electrons pT > 10 GeV, both |eta| < 2.4, photons pT > 20 GeV
+with |eta| < 2.5, DSA muons pT > 10 GeV with |eta| < 2.4. Each object also gets a
+menu of tighter thresholds, `>=1` and `>=2` event cuts, and multiplicity, pT and
+eta-phi histograms, the pT of leptons and photons up to 500 GeV as in SIDM's
+`hists.py`. They are starting values, not recommendations.
+
+**The first study.** `studies/obj_basics/basic_histograms.ipynb` is written like
+SIDM's `studies/obj_basics` notebooks: it finds and reloads the package, sets the
+plot style, lists the configured samples, makes a fileset of up to two simulated
+samples (that of `sample_file` first) and one data sample (`max_files=1`), prints the
+cuts of `baseline`, runs the processor (`IterativeExecutor`, `skipbadfiles=True`,
+`metadata_cache={}`), prints the cutflow side by side, and draws a `plot_row` of
+`muon_pt`/`electron_pt` and of `muon_n`/`electron_n` with the samples overlaid and
+normalised, then the muon eta-phi map. Figures go to `output/studies/`. Without muons
+or electrons it plots the first two objects that are counted; with none, it runs the
+`base` collection and leaves the plotting to the analyst.
 
 ## How the code here is organised
 
@@ -41,6 +122,8 @@ The generated project does not import HEPTAPOD. It is the user's code from then 
 | `_render.py` | Renders the analysis-specific half (definitions, configs, notebook) from a list of object specs, and holds the rules for names and for writing values as python and yaml. Pure python, returns text. |
 | `_projects.py` | Copies templates, keeps the marker file, inserts and replaces marked blocks in files the analyst also edits, and reads names out of those files without importing them. All writing goes through `Writes`, which undoes every write of an operation if one of them fails. |
 | `_scaffold.py` | `create_project(...)`: the whole scaffold as one function. Validates and renders everything before it writes anything. |
+| `_samples.py` | Lists a sample location (`os.walk`, or `xrdfs` for `root://`) and groups its files into samples. |
+| `_git.py` | Clone, find the top of a work tree, commit, describe. Never pushes. |
 | `_components.py` | `apply_component(...)`: the four components. |
 | `scaffold.py`, `components.py`, `check.py` | The tools: thin adapters that confine paths to `base_directory` and turn exceptions into formatted errors. |
 | `../analysis/nanoaod_layout.py` | Describes a tree from its branch names: collections, kinds, what coffea's schema will do with them. |
@@ -89,7 +172,8 @@ Three rules keep what is on disk and what is recorded about it in step:
   hand inside a block are not tracked.
 - **A framework is never scaffolded over.** `overwrite=true` lets the scaffold write
   into a directory that already has files (a fresh repository), never into one that
-  holds a framework: its definitions and configs are somebody's analysis.
+  holds a framework: its definitions and configs are somebody's analysis. With
+  `repo`, the clone may hold files without `overwrite`.
 
 Before a component defines a name (a channel, a histogram, a cut, an object), the
 analyst's files are read to see whether it is taken: python with `ast`, yaml with a
@@ -199,7 +283,8 @@ Changed after that run, and confirmed by the second run:
   against another, and the `lepton_jets` component points it out in its notes when two
   sources hold the same kind of particle. At 30ea002 the example's peak bin was centred
   at 505 GeV; with DSA muons added and cleaned as the skill describes, `baseline_2ljs`
-  peaked at 505 GeV too.
+  peaked at 505 GeV too. These peaks, like those of the first run, were measured with
+  the muon baseline of the time, pT > 10 GeV; it is 5 GeV since (see below).
 - The how-to's jet veto says that NanoAOD jets contain the leptons: the veto tried at
   the LPC removed every event of `baseline_2muons`, whose muons were inside jets. At
   30ea002, counted on the selected jets the veto kept 0 of that channel's 1737 events,
@@ -239,6 +324,37 @@ Changed after the second run, and checked at the LPC on 8 October 2026:
 - With `fsspec-xrootd` and `xrootd` installed into A by pip (0.5.5 and 6.2.0), the
   check read the first of the 47 files of a `root://` sample: 2272 events, with the
   cutflows B gave.
+
+### Added after the third check (not run at the LPC yet)
+
+Asked for after 49fecc1, and so far run only here, against stand-ins for the
+libraries:
+
+- building in a git repository (`repo`), cloned and committed, never pushed;
+- sample configs from the directories the samples live in (`sample_locations`), a
+  file per directory laid out and named as cms-sidm/SIDM's, and the same from
+  `scripts/add_samples.py`; the engine reads every file under `configs/samples/`;
+- the baseline lepton cuts of SIDM: the muon baseline went from pT > 10 to 5 GeV and
+  the electron |eta| from 2.5 to 2.4, and the pT histograms of leptons and photons
+  now reach 500 GeV instead of 200. The muons of `tests/synthetic.py` that are meant
+  to fail the baseline are now drawn below 4.5 GeV;
+- the first study, `studies/obj_basics/basic_histograms.ipynb`;
+- `InspectFile` and the scaffold's `sample_file` accept a `root://` url (reading one
+  needs `fsspec-xrootd` and `xrootd` in the toolkit's environment).
+
+`tests/test_framework.py` has four tests for these (38 in all): the git flow against a
+bare repository with the real `git` (a url, a local clone, an empty one, a README and a
+`.gitignore` already there, no identity, refusals); locations listed locally and
+through a stand-in `xrdfs`; the grouping, the names, the CRAB blocks and the generated
+script's agreement with the tool; the baseline and the notebook's cells. The whole
+request was also made of the tool against a stand-in `xrdfs` answering with the EOS
+layout recorded in SIDM's configs (`2018_v10/BsTo2DpTo2Mu2e/` and the 2018
+`DoubleMuon/`): 90 signal samples and one data sample, 4,886 lines of sample config,
+one commit. The notebook ran from
+top to bottom on the stand-ins for coffea, awkward and hist used for the engine's
+control flow (see below). `tests/test_framework_run.py` has a new test (24 in all)
+that scaffolds from directories of synthetic files and runs every cell of the study
+with the real libraries; it has not run yet.
 
 ### Checked where the libraries could not be installed
 
@@ -298,8 +414,8 @@ PY=$(grep -h '^python_path:' ~/.toolbase/cache/heptapod/*/.install_meta.yaml | h
 $PY -c "import coffea, awkward, uproot, hist, fastjet, numba; print(coffea.__version__, awkward.__version__, uproot.__version__, numba.__version__)"
 
 $PY tools/analysis/test_nanoaod_inspect.py --no-skips         # 15 tests
-$PY tools/framework/tests/test_framework.py --no-skips        # 34 tests
-$PY tools/framework/tests/test_framework_run.py               # 23 tests
+$PY tools/framework/tests/test_framework.py --no-skips        # 38 tests
+$PY tools/framework/tests/test_framework_run.py               # 24 tests
 ```
 
 In an environment of your own instead (an existing analysis environment with coffea),
@@ -345,7 +461,8 @@ The check reports the cuts each channel applies, cutflows, object counts, warnin
 and which histograms stayed empty; it does not return histogram contents. For the
 file named above, the physics cross-check is the invariant mass of the two leading
 lepton jets, which should peak near the 500 GeV of the sample: at the LPC, the peak
-bin of the code below was centred at 505 GeV. The lepton jets are clustered from the
+bin of the code below was centred at 505 GeV (with the muon baseline then at 10 GeV;
+it is 5 GeV now, which admits softer muons into the lepton jets). The lepton jets are clustered from the
 default sources, muons, electrons and photons. Do not add `dsaMuons` to them as they
 are: most muons in this file are also a DSA muon, and clustered twice they move the
 peak to 705 GeV. The `lepton_jets` section of the skill's components reference says how

@@ -31,20 +31,35 @@ working directory, it is the sample the user linked in: refer to files as
 `data/<name>.root`. (The `data/` directory *inside* an analysis package is something
 else: it holds golden JSONs and correction files, not events.) The files listed in a
 framework's sample configs are another matter: they are wherever the analysis reads
-them from, a `root://` URL or an absolute path included.
+them from, a `root://` URL or an absolute path included. So are the directories the
+samples live in: give `ScaffoldAnalysisFramework` a `root://` directory as it is (it
+is listed with `xrdfs`), and a local one by its path inside this directory
+(`data/...`).
 
 ## Working method
 
 1. **Find out what the analysis is.** Final state, objects, triggers, signal
    and control regions, data-taking period. Ask for what you were not told and
-   cannot read off the files. Do not fill gaps with typical values.
-2. **Inspect** a representative file with `InspectFile`. Collection and branch
-   names differ between productions; a wrong name is the most common failure.
-3. **Scaffold once** with `ScaffoldAnalysisFramework`, passing the file as
-   `sample_file`. Read the `notes` it returns. Once is meant literally: the tool
-   refuses a directory that already holds a framework, so that the analysis
-   written into it cannot be replaced. After this, the framework changes through
-   its own files and through `AddFrameworkComponent`.
+   cannot read off the files. Do not fill gaps with typical values. Two things to
+   settle before scaffolding: **where the framework goes** (the user's git
+   repository, as a url or a clone in this directory; if they have none, a new
+   directory here) and **where the events are** (the directories that hold the
+   simulation and the data, local or `root://`, with their run period; or the
+   files in `data/`). Ask when the request and this directory do not say.
+2. **Inspect** a representative file with `InspectFile`: one file of a simulated
+   sample from those directories. Collection and branch names differ between
+   productions; a wrong name is the most common failure.
+3. **Scaffold once** with `ScaffoldAnalysisFramework`: the file as `sample_file`,
+   the repository as `repo`, and each directory as an entry of `sample_locations`
+   (`{"directory": ..., "is_data": ..., "year": ...}`); it lists them and writes a
+   config per directory under `configs/samples/`, one sample per sub-directory, laid
+   out as cms-sidm/SIDM's. If the user wants the configs like existing ones (their
+   file names, group name, comment, sample names), pass `config`, `tag`, `comment`
+   and `name_format` with each location. Read the
+   `notes` it returns. Once is meant literally: the tool refuses a directory that
+   already holds a framework, so that the analysis written into it cannot be
+   replaced. After this, the framework changes through its own files and through
+   `AddFrameworkComponent`.
 4. **Check** with `CheckAnalysisFramework` and `sample=`: a simulated sample, and
    a data sample when there is one (one call takes both names, and its answer
    includes the static checks). It must come back with `ok: true` before you change
@@ -57,7 +72,14 @@ them from, a `root://` URL or an absolute path included.
 6. **Add components only when asked**, with `AddFrameworkComponent`.
 7. **Hand over**: how to run it, which cuts and thresholds are still the
    scaffold's placeholders, what is still missing, and what the last check
-   reported.
+   reported. Point to the first study, `studies/obj_basics/basic_histograms.ipynb`
+   (the muon and electron pT and multiplicity in a file of two simulated samples and
+   one data sample, after the baseline cuts), and how to run it. Built in a repository, give the commit and
+   the push command from the scaffold's `git` entry.
+
+The scaffold commits the framework once, in the repository, and never pushes. Do
+not push either, and do not commit your later changes, unless the user asks: the
+repository is theirs to publish.
 
 ## When the framework already exists
 

@@ -30,9 +30,11 @@ class PlanError(ValueError):
 
 # Starting kinematic menus per collection: (pT thresholds, |eta| thresholds, baseline pT,
 # baseline |eta|). They are starting points for the analyst to edit, not recommendations.
+# The baselines of muons, electrons and photons are the lepton-jet source cuts of
+# cms-sidm/SIDM (muons pT > 5 GeV, electrons pT > 10 GeV, both |eta| < 2.4).
 KINEMATIC_MENUS = {
-    "Muon": ([5, 10, 20, 30], [2.4], 10, 2.4),
-    "Electron": ([10, 20, 30], [2.5], 10, 2.5),
+    "Muon": ([5, 10, 20, 30], [2.4], 5, 2.4),
+    "Electron": ([10, 20, 30], [2.4, 2.5], 10, 2.4),
     "Photon": ([20, 30], [2.5], 20, 2.5),
     "Tau": ([20, 30], [2.3], 20, 2.3),
     "Jet": ([20, 30, 50], [2.4, 4.7], 30, 2.4),
@@ -64,7 +66,10 @@ OBJECT_LABELS = {
     "SV": "Secondary vertex", "GenPart": "Gen particle", "GenJet": "Gen jet",
 }
 
-PT_RANGES = {"Jet": 500, "FatJet": 1000, "MET": 500, "PuppiMET": 500, "GenPart": 500}
+# Upper end (GeV) of the pT histograms; the rest use default_binnings["pt"] (0 to 200).
+# The leptons and photons go to 500 GeV, as in cms-sidm/SIDM's hists.py.
+PT_RANGES = {"Muon": 500, "Electron": 500, "Photon": 500, "DSAMuon": 500, "Jet": 500,
+             "FatJet": 1000, "MET": 500, "PuppiMET": 500, "GenPart": 500}
 # Multiplicity binnings (nbins, xmin, xmax) where ten objects per event is far too few.
 N_RANGES = {"GenPart": (100, 0, 500)}
 
@@ -779,48 +784,117 @@ def render_cross_sections(samples: List[Dict[str, Any]]) -> str:
     return "\n".join(out) + "\n"
 
 
-def render_samples(samples: List[Dict[str, Any]], tag: str, year: Optional[str],
-                   package: str = PLACEHOLDER_PACKAGE) -> str:
-    out = [
-        "# Where the samples are. Each top-level entry is a group ('tag') of samples:",
-        "#",
-        "#   <tag>:",
-        "#     path: common prefix of every file in the group (may be empty)",
-        "#     year: default run period of the samples",
-        "#     samples:",
-        "#       <sample name>:",
-        "#         path: sub-directory of this sample (optional)",
-        "#         files: [...]         relative to path + sample path, or complete paths",
-        "#         is_data: false       true for data",
-        "#         year: \"2018\"         overrides the group's year",
-        "#         skim_factor: 1.0     fraction of the original events kept by a skim",
-        "#",
-        f"# python -m {package}.scripts.add_samples writes a group from a directory listing",
-        "# (it rewrites the file it is pointed at as plain yaml, without these comments).",
-        "",
-        f"{q(tag)}:",
-        "  path: \"\"",
-    ]
-    if year:
-        out.append(f"  year: {q(year)}")
-    out.append("  samples:")
-    if samples:
-        for sample in samples:
-            out.append(f"    {q(sample['name'])}:")
-            out.append("      files:")
-            out += [f"        - {q(path)}" for path in sample["files"]]
-            if sample.get("is_data"):
-                out.append("      is_data: true")
-            if sample.get("year") and str(sample["year"]) != str(year or ""):
-                out.append(f"      year: {q(sample['year'])}")
-            if sample.get("skim_factor") is not None:
-                out.append(f"      skim_factor: {num(sample['skim_factor'])}")
-    else:
-        out += ["    # None yet. For example:",
-                '    # "MySample":',
-                "    #   files:",
-                '    #     - "/complete/path/to/file.root"']
-    return "\n".join(out) + "\n"
+_PLAIN = re.compile(r"[A-Za-z0-9_/][A-Za-z0-9_./:+-]*")
+_NUMBER = re.compile(r"[-+]?(\d[\d_]*\.?[\d_]*|\.\d+)([eE][-+]?\d+)?")
+
+
+def yaml_text(text: str) -> str:
+    """A string as a yaml file shows it: plain where it is read back as the same string
+    (paths, file names, sample names, as cms-sidm/SIDM's configs have them), double
+    quoted where yaml would read something else (2018, true, a: b)."""
+    text = str(text)
+    if _PLAIN.fullmatch(text) and not _NUMBER.fullmatch(text):
+        try:
+            import yaml
+            if yaml.safe_load(text) == text:
+                return text
+        except Exception:            # no yaml here, or not a plain scalar after all
+            pass
+    return q(text)
+
+
+def _sample_group(group: Dict[str, Any]) -> List[str]:
+    """One group of a sample config, in cms-sidm/SIDM's layout: the comment, the tag,
+    its path, and per sample its files, then is_data, path, skim_factor and year."""
+    out = [f"# {group['comment']}"] if group.get("comment") else []
+    out += [f"{yaml_text(group['tag'])}:", f"  path: {yaml_text(group.get('path') or '')}",
+            "  samples:"]
+    for sample in group["samples"]:
+        out.append(f"    {yaml_text(sample['name'])}:")
+        out.append("      files:")
+        out += [f"      - {yaml_text(path)}" for path in sample["files"]]
+        if sample.get("is_data"):
+            out.append("      is_data: true")
+        if sample.get("path"):
+            out.append(f"      path: {yaml_text(sample['path'])}")
+        if sample.get("skim_factor") is not None:
+            out.append(f"      skim_factor: {num(sample['skim_factor'])}")
+        if sample.get("year"):
+            out.append(f"      year: {q(sample['year'])}")
+    return out
+
+
+def render_sample_configs(samples: List[Dict[str, Any]], groups: List[Dict[str, Any]],
+                          package: str = PLACEHOLDER_PACKAGE) -> Dict[str, str]:
+    """``{file name: text}`` of the configs under configs/samples/: the samples given file
+    by file in samples.yaml (group "main"), and each location's group in its own file,
+    laid out as cms-sidm/SIDM's ntuple configs (signal_2mu2e_v10.yaml, data.yaml)."""
+    files: Dict[str, List[str]] = {}
+    if samples or not groups:
+        out = []
+        if samples:
+            out += _sample_group({"tag": "main", "path": "", "samples": samples,
+                                  "comment": "samples given file by file "
+                                             "(configs/samples/README.md describes the layout)"})
+        else:
+            out += ["# samples given file by file (configs/samples/README.md describes the layout)",
+                    "main:",
+                    '  path: ""',
+                    "  samples:",
+                    "    # None yet. For example:",
+                    "    # MySample:",
+                    "    #   files:",
+                    "    #   - /complete/path/to/file.root",
+                    "    #   year: \"2018\"",
+                    f"    # or a directory of them: python -m {package}.scripts.add_samples"]
+        files["samples.yaml"] = out
+    for group in groups:
+        out = files.setdefault(group["config"], [])
+        if out:
+            out += ["", ""]
+        out += _sample_group(group)
+    return {name: "\n".join(lines) + "\n" for name, lines in files.items()}
+
+
+def render_samples_readme(package: str = PLACEHOLDER_PACKAGE) -> str:
+    """configs/samples/README.md: the layout of the sample configs."""
+    return f"""# Sample configs
+
+One file per production, as cms-sidm/SIDM keeps its ntuple configs (`signal_2mu2e_v10.yaml`,
+`data.yaml`, ...). Each file holds one or more groups of samples:
+
+```yaml
+# 2mu2e signal samples with correct lifetime and no unwanted gen filters
+llpNanoAOD_v2:                              # the group (tag)
+  path: root://cmseos.fnal.gov//store/group/lpcmetx/SIDM/ULSignalSamples/2018_v10/BsTo2DpTo2Mu2e/
+  samples:
+    2Mu2E_500GeV_0p25GeV_0p4mm:             # the sample's name
+      files:
+      - CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3_part-0.root
+      # - ..._part-7.root  # a file that cannot be read can be commented out
+      path: CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3/LLPnanoAODv2/
+      year: "2018"
+```
+
+A file is read from the group's `path`, then the sample's `path`, then its name in
+`files` (a complete path or url in `files` is taken as it is). A sample can also say
+`is_data: true` (data), `year` (its run period in `configs/run_periods.yaml`; a `year` on
+the group applies to all of its samples) and `skim_factor` (the fraction of the
+original events a skim kept). Simulated samples take their cross section from
+`configs/cross_sections.yaml`, under the sample's name.
+
+Every file here is read: `utilities.make_fileset(["2Mu2E_500GeV_0p25GeV_0p4mm"])` finds the
+sample wherever it is. A name used in two groups needs its group (`tag=`), and in two
+files with the same group name also its file (`location_cfg=`); the check says so.
+
+To add the samples of a directory, local or `root://`, in this layout:
+
+```bash
+python -m {package}.scripts.add_samples -o signal_4mu_v10.yaml -t llpNanoAOD_v2 \\
+    -d root://cmseos.fnal.gov//store/group/lpcmetx/SIDM/ULSignalSamples/2018_v10/BsTo2DpTo4Mu/ \\
+    -c "4mu signal samples" --name-format "4Mu_{{MBs}}GeV_{{MDp}}GeV_{{ctau}}mm" --year 2018
+```
+"""
 
 
 # --------------------------------------------------------------------------- #
@@ -935,6 +1009,10 @@ plt.yscale("log")
 out[{first_sample}]["metadata"]
 """),
     ]
+    return _notebook(cells)
+
+
+def _notebook(cells: List[Dict[str, Any]]) -> str:
     notebook = {
         "cells": cells,
         "metadata": {
@@ -946,3 +1024,201 @@ out[{first_sample}]["metadata"]
         "nbformat_minor": 4,
     }
     return json.dumps(notebook, indent=1) + "\n"
+
+
+# --------------------------------------------------------------------------- #
+# the first study
+# --------------------------------------------------------------------------- #
+
+STUDY_NOTEBOOK = "studies/obj_basics/basic_histograms.ipynb"
+
+
+def study_objects(plan: Dict[str, Any]) -> List[str]:
+    """The objects the first study plots: the muons and electrons, else the first two."""
+    usable = [s for s in plan["specs"] if is_countable(s) and not s["mc_only"]]
+    chosen = []
+    for collection in ("Muon", "Electron"):
+        found = next((s["name"] for s in usable if s["collection"] == collection), None)
+        if found:
+            chosen.append(found)
+    return chosen or [s["name"] for s in usable[:2]]
+
+
+def render_study_notebook(package: str, title: str, plan: Dict[str, Any],
+                          simulated: List[str], data: List[str]) -> str:
+    """A first study in the style of cms-sidm/SIDM's studies/obj_basics: process a file
+    of up to two simulated samples and one data sample and plot the basic histograms of
+    the leptons, the samples overlaid."""
+    names = study_objects(plan)
+    stems = [singular(name) for name in names]
+    samples = simulated[:2] + data[:1]
+    sample_list = ", ".join(q(s) for s in samples) if samples else q("SAMPLE_NAME")
+    if not samples:
+        sample_note = "   # no sample is configured yet: put names from the list above here"
+    else:
+        sample_note = "   # simulation and data to compare: any names from the list above"
+    which = " and ".join(names) if names else "objects"
+    cells = [
+        _cell("markdown", f"""
+# {title}: basic {which}
+
+The first study: run the processor over a file of a few samples, print the cutflow of
+the `baseline` channel, and plot the basic histograms of the {which} with the samples
+overlaid. The object cuts are the ones `baseline` applies in `configs/selections.yaml`;
+the cell that builds the processor prints them.
+
+Rerun it after changing an object, a cut or a histogram: it is the quickest picture of
+what the change did. It follows the studies of cms-sidm/SIDM (`studies/obj_basics`):
+configure, run, then one `plot_row` per group of histograms.
+"""),
+        _cell("code", f"""
+# python
+import os
+import sys
+import importlib
+import importlib.util
+# columnar analysis and plotting
+import numpy as np
+import matplotlib.pyplot as plt
+from coffea import processor
+
+# the analysis package: the repository this notebook is in (found by walking up from
+# it), or else where the package is installed (pip install -e .)
+REPO = os.path.abspath(os.getcwd())
+while not os.path.isfile(os.path.join(REPO, {q(package)}, "__init__.py")):
+    if os.path.dirname(REPO) == REPO:
+        spec = importlib.util.find_spec({q(package)})
+        if spec is None or not spec.origin:
+            raise RuntimeError("open this notebook from inside the analysis repository, "
+                               "or install the package (pip install -e .)")
+        REPO = os.path.dirname(os.path.dirname(spec.origin))
+        break
+    REPO = os.path.dirname(REPO)
+if REPO not in sys.path:
+    sys.path.insert(0, REPO)
+
+# local
+from {package} import TREE_NAME
+from {package}.tools import utilities, plotting, selection, histogram, cutflow, schema
+from {package}.tools import processor as analysis_processor
+from {package}.definitions import objects, cuts, hists, weights
+# reload the local modules, to pick up edits made while the notebook is open
+for module in (utilities, cutflow, histogram, schema, objects, cuts, hists, weights,
+               selection, analysis_processor, plotting):
+    importlib.reload(module)
+plotting.set_plot_style()
+%matplotlib inline
+"""),
+        _cell("markdown", """
+## Samples
+
+Every sample under `configs/samples/`, file by file and group by group, as in
+cms-sidm/SIDM's `configs/ntuples/`.
+"""),
+        _cell("code", """
+for config, tag, group in utilities.find_samples():
+    names = list(group["samples"])
+    print(f"{config}, {tag} ({group.get('path') or 'complete paths'}): {len(names)} sample(s)")
+    for name in names[:10]:
+        print("   ", name)
+    if len(names) > 10:
+        print(f"    ... and {len(names) - 10} more")
+"""),
+        _cell("code", f"""
+samples = [{sample_list}]{sample_note}
+fileset = utilities.make_fileset(samples, max_files=1)   # one file each; max_files=-1 reads all
+"""),
+        _cell("markdown", """
+## Process
+
+The baseline selection, and the histogram collections of the objects plotted below.
+"""),
+        _cell("code", f"""
+channels = ["baseline"]
+hist_collections = {json.dumps([f"{stem}_base" for stem in stems] or ["base"])}
+
+p = analysis_processor.AnalysisProcessor(channels, hist_collections)
+selection_cuts = p.build_cuts()["baseline"]
+for obj, cut_names in selection_cuts["obj"].items():
+    print(f"{{obj}}: {{cut_names}}")
+print("event cuts:", selection_cuts["evt"])
+
+runner = processor.Runner(
+    executor=processor.IterativeExecutor(),
+    # executor=processor.FuturesExecutor(workers=4),   # several local processes
+    schema=schema.AnalysisSchema,
+    chunksize=100_000,
+    # maxchunks=1,          # the first chunk of each sample only, for a quicker look
+    skipbadfiles=True,    # carry on past a file that cannot be read: see what was read below
+    metadata_cache={{}},    # read every sample's is_data, year and skim_factor afresh
+)
+out = runner(fileset, processor_instance=p, treename=TREE_NAME)
+for sample in samples:
+    print(sample, f"{{out[sample]['metadata']['n_evts']}} events" if sample in out else "nothing read")
+"""),
+        _cell("markdown", """
+## Cutflow
+
+Events left after each event cut of `baseline`, the samples side by side. These are raw
+counts: weighted ones need cross sections and a luminosity in `configs/`.
+"""),
+        _cell("code", """
+read = [sample for sample in samples if sample in out]
+print("\\n".join(utilities.cutflow_table(out, "baseline", samples=read, weighted=False)))
+"""),
+        _cell("markdown", """
+## Basic histograms
+
+`plot_row` draws one panel per histogram with every sample overlaid, each normalised to
+unit area so that simulation and data compare in shape. The figures are also saved in
+`output/studies/` at the top of the repository (git ignores `output/`).
+"""),
+        _cell("code", """
+def plot_row(names, channel="baseline", density=True, ylog=False):
+    \"\"\"One panel per histogram, the samples overlaid.\"\"\"
+    fig, axes = plt.subplots(1, len(names), figsize=(12 * len(names), 10))
+    for ax, name in zip(np.atleast_1d(axes), names):
+        plt.sca(ax)
+        plotting.plot_samples(out, name, channel, samples=read, density=density)
+        if ylog:
+            ax.set_yscale("log")
+    return fig
+
+
+figures = os.path.join(REPO, "output", "studies")
+os.makedirs(figures, exist_ok=True)
+"""),
+    ]
+    if stems:
+        cells += [
+            _cell("code", f"""
+fig = plot_row({json.dumps([f"{stem}_pt" for stem in stems])})
+fig.savefig(os.path.join(figures, "basic_pt.png"))
+"""),
+            _cell("code", f"""
+fig = plot_row({json.dumps([f"{stem}_n" for stem in stems])})
+fig.savefig(os.path.join(figures, "basic_multiplicity.png"))
+"""),
+            _cell("code", f"""
+# where the {names[0]} are, in the first sample
+plt.figure(figsize=(12, 10))
+plotting.plot(utilities.get_hist(out, read[0], {q(stems[0] + "_eta_phi")}, "baseline"))
+plt.savefig(os.path.join(figures, {q(stems[0] + "_eta_phi.png")}))
+"""),
+        ]
+    else:
+        cells.append(_cell("markdown", """
+The framework has no object with a multiplicity and a pT histogram yet. Name the
+histograms to draw, from `configs/hist_collections.yaml`, in a `plot_row([...])`.
+"""))
+    cells.append(_cell("markdown", f"""
+## Next
+
+- A tighter or different object cut: define it in `{package}/definitions/cuts.py`, list it
+  under the object in `{package}/configs/selections.yaml`, rerun.
+- Another histogram: define it in `{package}/definitions/hists.py`, add it to a
+  collection in `{package}/configs/hist_collections.yaml`, add the collection above.
+- All files of a sample: `max_files=-1` (with `processor.FuturesExecutor`, or the
+  `scaleout` component for a cluster).
+"""))
+    return _notebook(cells)

@@ -280,9 +280,12 @@ tools:
   - module: tools.framework.scaffold
     name: ScaffoldAnalysisFrameworkTool
     description: Write a coffea analysis framework for a new analysis (engine, starting
-      objects/cuts/histograms/selections, samples, test notebook), matched to a
-      representative ROOT file when one is given. Called once per analysis; check the
-      result with CheckAnalysisFramework.
+      objects/cuts/histograms/selections, samples, test notebook, a first study),
+      matched to a representative ROOT file when one is given, into the user's git
+      repository (cloned and committed, never pushed) or a new directory, with the
+      sample configs listed from the directories the simulation and data live in
+      (local or root://). Called once per analysis; check the result with
+      CheckAnalysisFramework.
     bundle: framework
   - module: tools.framework.components
     name: AddFrameworkComponentTool

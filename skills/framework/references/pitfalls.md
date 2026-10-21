@@ -65,7 +65,7 @@ before it. The answer never holds the axis or the contents of a histogram.
 | `[ch] unknown key 'x'` | A typo such as `evt_cut:`. Allowed: `obj_cuts`, `evt_cuts`, `description`. |
 | `[ch] obj_cuts must give the cuts object by object` | `obj_cuts` was written as a list, the way `evt_cuts` is. It is a mapping: `obj_cuts:` then `<<: *object_cuts` or `muons: [...]`, not `- *object_cuts`. |
 | `the configs cannot be read (... must hold 'name: value' entries ...)` | A config file whose top level is a list or a single value. Every config is a mapping of names. |
-| `configs/samples/x.yaml cannot be read (...)` | A group or sample of the wrong shape: `tag: {path, year, samples: {name: {files: [...], ...}}}`. |
+| `configs/samples/x.yaml cannot be read (...)` | A group or sample of the wrong shape: `tag: {path, samples: {name: {files: [...], path: ..., ...}}}` (`configs/samples/README.md` shows one). |
 | `run period 'x' ... must be laid out as {lumi: ..., golden_json: ...}` | The period was given a bare number. |
 | `the cross section of sample 'x' cannot be read` | Its entry in `cross_sections.yaml` is not a number. |
 | `the static checks could not be completed (...)` | A definition has a shape the check did not expect; the traceback under the message shows which. |
@@ -88,7 +88,9 @@ written without `evt_cuts` has no event cuts, not the shared ones.
 Static warnings worth knowing: `has no cross section`, `has no lumi` and `is in run
 period 'x', which is not in configs/run_periods.yaml` are missing inputs, to be
 reported, not guessed. `is defined in several groups` means a sample name is used in
-two groups of one sample config and must be asked for with its `tag`.
+two groups of one sample config and must be asked for with its `tag`; `is defined in
+a.yaml and in b.yaml` that it is in two configs, and must be asked for with its file
+(`sample_config`, `location_cfg=`) as well when the two groups share a name.
 
 ## The run stops
 

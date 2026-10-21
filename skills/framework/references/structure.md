@@ -52,7 +52,7 @@ must build in every sample.
 ```yaml
 _object_cuts: &object_cuts        # leading underscore: a building block, not a channel
   muons: &muons_base
-    - "pT > 10 GeV"
+    - "pT > 5 GeV"
 _event_cuts: &event_cuts
   - "PV filter"
 
@@ -67,8 +67,16 @@ baseline:
 `hist_collections.yaml`: each top-level entry is a list of histogram names; lists may
 include other lists by anchor.
 
-`samples/*.yaml`: `{tag: {path, year, samples: {name: {path, files, is_data, year, skim_factor}}}}`.
-A tag names a group of samples; a file may hold several groups.
+`samples/*.yaml`: `{tag: {path, samples: {name: {files, is_data, path, skim_factor, year}}}}`,
+one file per production, as cms-sidm/SIDM keeps its ntuple configs (`signal_2mu2e_v10.yaml`,
+`data.yaml`; `samples/README.md` shows one). A tag names a group of samples; a file may
+hold several groups, and two files may use the same tag. A group listed from a directory
+has that directory as its `path` (`root://cmseos.fnal.gov//store/.../BsTo2DpTo2Mu2e/`),
+each sample the directory its files are in below it (`<sample>/LLPnanoAODv2/`), and
+`files` the names under that. A file's location is the three joined; a complete path or
+url in `files` is used as it is. Every file is searched for a sample by name
+(`utilities.find_samples()` lists them all); `tag` and `location_cfg` choose when a name
+is used twice.
 `cross_sections.yaml`: `{sample name: pb}`. `run_periods.yaml`: `{year: {lumi: /pb, golden_json: file in data/}}`.
 
 Every config is a mapping of names to values, and the names are read as text: a run
@@ -80,6 +88,24 @@ Yaml anchors (`&name`, `*name`, `<<: *name`) are how configs avoid repeating
 themselves. Lists pasted inside lists are flattened when read. An anchor must be
 defined above the place it is used. Entries whose name starts with an underscore
 cannot be run.
+
+## The notebooks
+
+`PKG/test_notebooks/test_processor.ipynb` exercises the machinery: a file of up to two
+samples through every channel, the cutflows, a histogram and the warnings. Re-run it
+after changing the engine.
+
+`PKG/studies/obj_basics/basic_histograms.ipynb` is the first study, built like the
+studies of cms-sidm/SIDM (`studies/obj_basics/`): it finds the package from its own
+directory, reloads the analysis modules, sets the experiment's plot style, lists the
+configured samples, builds a fileset of two simulated samples (the one the framework
+was matched to first) and a data sample (one file each, `max_files=1`), prints the cuts `baseline` applies, runs the processor with the
+`<object>_base` collections of the muons and electrons, prints the cutflow side by
+side, and draws `plot_row` panels of `muon_pt`/`electron_pt` and `muon_n`/`electron_n`
+with the samples overlaid and normalised to unit area, then the muons' eta-phi map.
+The figures are saved in `output/studies/` at the top of the project (`output/` is
+git-ignored). A new study is a new notebook next to it; a cut or histogram it needs
+goes into `definitions/` and `configs/` like any other.
 
 ## What a chunk goes through
 

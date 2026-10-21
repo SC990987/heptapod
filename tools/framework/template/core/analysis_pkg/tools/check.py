@@ -17,7 +17,6 @@ full report (use it rather than parsing the printed summary).
 
 import argparse
 import ast
-import glob
 import json
 import os
 import platform
@@ -317,8 +316,8 @@ def _static_checks(report):
         cross_sections_readable = False
         errors.append(f"configs/cross_sections.yaml cannot be read ({utilities.brief(exc)})")
     samples = {}
-    for path in sorted(glob.glob(os.path.join(BASE_DIR, "configs", "samples", "*.yaml"))):
-        cfg_name = os.path.basename(path)
+    for cfg_name in utilities.sample_configs():
+        path = os.path.join(BASE_DIR, "configs", "samples", cfg_name)
         try:
             locations = utilities.load_samples(path)
         except Exception as exc:
@@ -335,6 +334,10 @@ def _static_checks(report):
                                 "(tag=... or --tag)")
         for tag, block in locations.items():
             for sample, cfg in block["samples"].items():
+                if sample in samples and samples[sample]["config"] != cfg_name:
+                    warnings.append(f"sample '{sample}' is defined in {samples[sample]['config']} "
+                                    f"and in {cfg_name}: it can only be used with its config "
+                                    "named (location_cfg=... or --location-cfg)")
                 is_data = utilities.as_bool(cfg.get("is_data", False))
                 year = str(cfg.get("year", block.get("year", "")) or "")
                 files = cfg.get("files") or []
@@ -569,8 +572,9 @@ def main(argv=None):
         description="Check that the analysis is self-consistent and, optionally, that it runs.")
     parser.add_argument("--sample", nargs="+", help="configured sample(s) to run on (first file of each)")
     parser.add_argument("--tag", help="group of the location config the samples belong to")
-    parser.add_argument("--location-cfg", default="samples.yaml",
-                        help="file under configs/samples/ (default: samples.yaml)")
+    parser.add_argument("--location-cfg", default=None,
+                        help="file under configs/samples/ to take the samples from "
+                             "(default: every file there)")
     parser.add_argument("--file", help="run on this file instead of a configured sample")
     parser.add_argument("--dataset", help="dataset name to use with --file (default: check)")
     parser.add_argument("--data", action="store_true", help="--file is data")

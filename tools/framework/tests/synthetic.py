@@ -97,11 +97,11 @@ def write_nanoaod(path, n=400, seed=7, data=False, resonance_mass=500.0, tree_na
         "dsaMatch1idx": np.stack([np.where(n_dsa > 0, 0, -1), np.full(n, -1)], axis=1).astype(f32),
         "dsaMatch2idx": np.stack([np.where(n_dsa > 1, 1, -1), np.full(n, -1)], axis=1).astype(f32),
     })
-    # soft extra muons, below any sensible threshold
+    # soft extra muons, below any sensible threshold (the scaffold's muon baseline is 5 GeV)
     n_soft = rng.integers(0, 2, n)
     total = int(n_soft.sum())
     soft_muons = _jagged({
-        "pt": rng.uniform(3, 8, total).astype(f32), "eta": rng.uniform(-2.4, 2.4, total).astype(f32),
+        "pt": rng.uniform(2, 4.5, total).astype(f32), "eta": rng.uniform(-2.4, 2.4, total).astype(f32),
         "phi": rng.uniform(-np.pi, np.pi, total).astype(f32),
         "mass": np.full(total, MUON_MASS, dtype=f32),
         "charge": rng.choice(np.array([-1, 1], dtype=i32), total),
