@@ -16,6 +16,7 @@ A production: one directory holding everything needed to make a simulated sample
       bin/condor_job.sh    what a batch node runs
       bin/in_el8.sh        run a command in el8 (directly, or in cmssw-el8)
       bin/wrap_cfg.py      run one step for one job: events, seeds, threads, luminosity block
+      .gitignore           "*": git leaves the production alone, in whatever repository it is
       cmssw/  cfg/  jobs/  condor/  output/   made as the production runs
 
 Writing it runs nothing and needs no CMSSW: the scripts are static, and what is
@@ -127,6 +128,11 @@ def create(directory: Path, *, name: str, run_period: str, events: int, events_p
     (directory / "bin").mkdir(parents=True)
     for sub in ("cfg", "jobs", "condor/logs", "condor/out"):
         (directory / sub).mkdir(parents=True, exist_ok=True)
+    # CMSSW areas and ROOT files: never something to commit, even when the working
+    # directory is a git repository (an analysis built beside the sample, say)
+    (directory / ".gitignore").write_text(
+        "# a CMS simulation production (HEPTAPOD's PrepareMCProduction): CMSSW areas and\n"
+        "# ROOT files, kept out of git\n*\n")
     (directory / "fragment.py").write_text(fragment)
     (directory / "production.json").write_text(json.dumps(description, indent=1) + "\n")
     (directory / "bin" / "production.env").write_text(render_env(description))

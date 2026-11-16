@@ -194,8 +194,9 @@ def test_a_production_is_written_complete():
         root = Path(tmp) / "jpsi"
         for relative in ("production.json", "fragment.py", "bin/production.env", "bin/configure.sh",
                          "bin/run_job.sh", "bin/driver.sh", "bin/condor_job.sh", "bin/in_el8.sh",
-                         "bin/wrap_cfg.py", "cfg", "jobs", "condor/logs", "condor/out"):
+                         "bin/wrap_cfg.py", "cfg", "jobs", "condor/logs", "condor/out", ".gitignore"):
             assert (root / relative).exists(), relative
+        assert "*" in (root / ".gitignore").read_text().splitlines()
         for script in ("configure.sh", "run_job.sh", "driver.sh", "condor_job.sh", "in_el8.sh"):
             assert os.access(root / "bin" / script, os.X_OK), script
             assert subprocess.run(["bash", "-n", str(root / "bin" / script)]).returncode == 0, script
