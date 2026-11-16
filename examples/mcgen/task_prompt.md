@@ -29,6 +29,11 @@ The filter's cuts are those of the framework's starting muon selection, so nearl
 every event produced reaches the dimuon-mass plot. Running the notebook needs Jupyter
 in the toolkit's environment (see `README.md`).
 
+To have the framework in a repository of your own, start the agent in a new git
+repository (`launch.py --dir` on it) and ask for the framework "in this repository,
+with the package named jpsi_analysis" instead of "in a new directory jpsi_analysis":
+it is built at the repository's top and committed there.
+
 ---
 
 ## Produce a sample and analyse it

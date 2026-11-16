@@ -13,7 +13,8 @@ premixed pileup; here or on HTCondor at the Fermilab LPC:
 
 The `mcgen` skill (`skills/mcgen/`) teaches an agent the workflow, from writing the
 generator settings of any process to building an analysis framework on the sample.
-`examples/mcgen/` launches an agent with these tools and the framework tools.
+`examples/mcgen/` launches an agent with these tools and the framework tools, and
+`scripts/condor_dashboard.py` shows the batch jobs live in a browser.
 
 ## The chain
 
@@ -56,6 +57,7 @@ HTCondor.
   bin/condor_job.sh    what a batch node runs (releases set up there)
   bin/in_el8.sh        directly on el8, else in cmssw-el8
   bin/wrap_cfg.py      a step for one job: events, seeds, luminosity block, threads, GenXSecAnalyzer
+  .gitignore           "*": git leaves the production alone, in whatever repository it is
 ```
 
 `RunMCProduction` starts `bin/driver.sh` in a session of its own and returns: the tools
@@ -74,6 +76,18 @@ prints over the jobs: the cross section before the filter, the filter efficiency
 the sample's cross section.
 
 Outputs: `<output>/<TIER>/<name>_<TIER>_<job>.root`.
+
+## Watching the jobs
+
+`MCProductionStatus` is the agent's view of a production. Yours is
+`scripts/condor_dashboard.py`: a page in your browser with every HTCondor job of
+yours, its state and how long it has been in it (running for, waiting for, held for),
+or how long it ran and when it finished, the jobs of a production grouped under its
+name. It asks HTCondor every 30 s (condor_q, and the history of the LPC schedds for the
+last 24 hours), and needs only Python 3.9 and the HTCondor tools. `python
+scripts/condor_dashboard.py` prints the link to open, `--once` prints the jobs in the
+terminal instead. It serves the page on the machine's localhost behind a key in the
+link, and only reads.
 
 ## How the code here is organised
 
@@ -105,6 +119,10 @@ tools were called from python, in the order the skill gives an agent.
 | Here, 2023, no pileup, 700 events with the same filter, to NanoAOD | 98 events through every step; `ScaffoldAnalysisFramework` and `CheckAnalysisFramework` `ok: true` on the sample |
 | HTCondor, 2024, premixed pileup, one job of 70 events, output on EOS | 6 events passed the filter and went through every step in an EL8 slot; NanoAOD written to EOS with `xrdcp`; `MCProductionStatus` followed the job in HTCondor's job log and read its summary; a framework built on the file on EOS and checked, `ok: true` |
 | The first prompt of `examples/mcgen/task_prompt.md`: 100 events after the filter (muons of pT > 5 GeV and abs(eta) < 2.4), 2023, no pileup, here, then the framework and its first study | 47 minutes in all. The generator-only test: 43/2000 = 2.15% (4 min). A one-job test of 233 generated events: 3 events through every step, kept out of the output, `test done` (10 min). The production: 5400 events generated, 153 (2.83%) passed the filter and went through every step (31 min; 3.05e6 pb before the filter, 8.6e4 pb after). The framework from `for_framework`: `CheckAnalysisFramework` `ok: true`, 145 of the 153 events with two muons after the starting cuts; its first study ran in 50 s, and its dimuon mass shows the J/psi peak |
+| `scripts/tests/test_condor_dashboard.py` | 17 passed, on the system Python 3.9 and on 3.12 |
+| `scripts/condor_dashboard.py --once` | the queue and the history of the three LPC schedds in 3 s: the job of the HTCondor row above, grouped under its production; with `--hours 72`, 3581 jobs of another analysis in 6 groups, in 8 s |
+| The dashboard's page, served on the node | refused without the link's key; 3581 jobs made 1.3 MB of JSON, 99 kB compressed, and a page that already had the version got a few bytes, with the time of the last answer; the page's script, run in node against that state and a made-up one holding every state, drew the totals, groups, tables and clocks and took the filter without an error (there is no browser on the node) |
+| `launch.py --dir` on a new git repository, a production directory in it, then over MCP `ScaffoldAnalysisFramework(repo=".")` on the J/psi sample, `CheckAnalysisFramework(project_dir=".")` and the first study | the sandbox's files listed in `.git/info/exclude` and the production ignored: `git status` empty; the framework built at the repository's top and committed alone (36 files); check `ok: true` in 51 s (145 of 153 events with two muons); the study ran in 61 s and shows the peak. `tools/framework/tests`: 39 passed |
 
 Found and fixed while running: the analyzer is `GenXSecAnalyzer`; cmsDriver
 configurations print no `TrigReport` unless `wantSummary` is set; `xrdcp` 5 has no
@@ -117,9 +135,12 @@ once); with a 2% filter, a test of 5 generated events ran the chain on nothing, 
 one-job production counted as complete after its test (a test now generates about
 5 / efficiency events and stays out of the output); on a hundred events the first
 study's pair mass, drawn as a density with error bars, hid the peak (now events per
-bin, without error bars).
+bin, without error bars); the LPC's `condor_q` and `condor_history` are scripts
+without a `#!` line, which Python cannot start directly (the dashboard runs them with
+`/bin/sh`, as a shell does).
 
 Not run: Run 2 (not supported), LHE productions beyond configuring them, productions
-of more than one job on HTCondor, and agent sessions (`--harness claude-code`, `codex`
-or `opencode`) driving these tools: the tools were called from python, as an agent
-calls them.
+of more than one job on HTCondor, the dashboard in a browser or with jobs of its own
+in the queue (none was submitted for it), and agent sessions (`--harness
+claude-code`, `codex` or `opencode`) driving these tools: the tools were called from
+python and over MCP, as an agent calls them.
