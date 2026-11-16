@@ -101,6 +101,16 @@ bundles:
       - fastjet>=3.4.3.1
       - numba<0.67                     # see the coffea bundle
 
+  # ── CMS simulation ───────────────────────────────────────────────
+  # Produces CMS simulation, from the generator to NanoAOD, for any process and a Run 3
+  # run period, with the official campaign's releases, conditions, HLT menu and
+  # premixed pileup, as real McM requests of the campaign have them. Pure python on
+  # this side: CMSSW comes from /cvmfs and runs in the scripts each production writes,
+  # in an el8 container (cmssw-el8) or an EL8 HTCondor slot at the LPC. Needs /cvmfs;
+  # premixed pileup and batch jobs need a grid proxy. The `mcgen` skill teaches the
+  # workflow, building an analysis framework on the output included.
+  mcgen: {}
+
   # ── BSM / SUSY spectrum setup ────────────────────────────────────
   # Pure python (no external HEP software): parse benchmark-point spectra
   # and build Pythia decay-table fragments for BSM states the LHE leaves
@@ -300,6 +310,33 @@ tools:
       a short run that returns cutflows, object counts, empty histograms and every
       warning the processor recorded. Called after every change to the framework.
     bundle: framework
+  - module: tools.mcgen.campaigns
+    name: ListMCCampaignsTool
+    description: List the Run 3 run periods CMS simulation can be produced for and, step
+      by step, the CMSSW release, global tag, era, beamspot, HLT menu and premixed
+      pileup library of each, taken from real McM requests of the campaign.
+    bundle: mcgen
+  - module: tools.mcgen.prepare
+    name: PrepareMCProductionTool
+    description: Write a CMS simulation production for any process (Pythia 8 settings
+      with optional generator filters, a complete fragment such as an LHE gridpack, a
+      fragment file, or an official McM request's fragment) and a Run 3 run period,
+      taken through the official chain as far as GEN, GEN-SIM, AOD, MINIAOD or NANOAOD,
+      with or without premixed pileup. Runs nothing.
+    bundle: mcgen
+  - module: tools.mcgen.run
+    name: RunMCProductionTool
+    description: Run a prepared production here (in an el8 container, with a quick-test
+      option) or submit it to HTCondor at the LPC with outputs to EOS. Returns at once;
+      a background driver configures the production once and runs it.
+    bundle: mcgen
+  - module: tools.mcgen.status
+    name: MCProductionStatusTool
+    description: Report where a production stands - configuration, every job's state,
+      events per step, output files, the generator's cross section and filter
+      efficiency - and, once NanoAOD exists, what ScaffoldAnalysisFramework needs to
+      build an analysis framework on it.
+    bundle: mcgen
   - module: tools.inspire.inspire_tools
     name: InspireAuthorTool
     description: Get information about a physicist and their publication
