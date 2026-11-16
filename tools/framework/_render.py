@@ -1200,8 +1200,8 @@ print("\\n".join(utilities.cutflow_table(out, "baseline", samples=read, weighted
 
 `plot_row` draws one panel per histogram with every sample overlaid, each normalised to
 unit area so that simulation and data compare in shape. Where the framework has the
-invariant mass of a pair, it is drawn too, on a logarithmic axis from 0.2 GeV to 1 TeV
-on which any resonance of the pair shows as a peak. The figures are also saved in
+invariant mass of a pair, it is drawn too, as events per bin on a logarithmic axis from
+0.2 GeV to 1 TeV, on which any resonance of the pair shows as a peak. The figures are also saved in
 `output/studies/` at the top of the repository (git ignores `output/`).
 """),
         _cell("code", """
@@ -1241,10 +1241,13 @@ plt.savefig(os.path.join(figures, {q(stems[0] + "_eta_phi.png")}))
         if pair:
             cells.append(_cell("code", f"""
 # the invariant mass of the two leading {pair["object"]}, on a logarithmic axis: a resonance
-# of the pair shows as a peak wherever it is (J/psi, Upsilon, Z, ...)
+# of the pair shows as a peak wherever it is (J/psi, Upsilon, Z, ...). Events per bin, not a
+# density, which these narrow bins would raise at low mass; and no error bars, since most
+# bins are empty and the error bar of an empty bin is not zero
 fig, ax = plt.subplots(figsize=(12, 10))
-plotting.plot_samples(out, {q(pair["hist"])}, "baseline", samples=read, density=True)
+plotting.plot_samples(out, {q(pair["hist"])}, "baseline", samples=read, yerr=False)
 ax.set_xscale("log")
+ax.set_ylabel("Events per bin")
 fig.savefig(os.path.join(figures, {q(pair["hist"] + ".png")}))
 """))
     else:

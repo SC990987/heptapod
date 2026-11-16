@@ -363,6 +363,8 @@ def test_the_baseline_and_the_first_study():
         # the invariant mass of the two leading muons, log-binned from 0.2 GeV to 1 TeV and
         # drawn on a logarithmic axis, so that any dimuon resonance shows as a peak
         assert 'plotting.plot_samples(out, "muon_muon_invmass", "baseline"' in code
+        # events per bin without error bars: not a density, and no bars on the empty bins
+        assert 'samples=read, yerr=False)' in code and 'set_ylabel("Events per bin")' in code
         assert 'ax.set_xscale("log")' in code and "muon_muon_invmass.png" in code
         assert "hist.axis.Regular(300, 0.2, 1000., transform=hist.axis.transform.log" in hists
         assert "muon_muon_invmass" in collections["muon_base"]

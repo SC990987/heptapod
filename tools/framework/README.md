@@ -103,8 +103,8 @@ to two simulated samples (that of `sample_file` first) and one data sample
 side by side, and draws a `plot_row` of `muon_pt`/`electron_pt` and of
 `muon_n`/`electron_n` with the samples overlaid and normalised, the muon eta-phi map,
 and `muon_muon_invmass`, the mass of the two leading muons, log-binned from 0.2 GeV to
-1 TeV and drawn on a logarithmic axis, so that any dimuon resonance (J/psi, Upsilon,
-Z, ...) shows as a peak. Figures go to `output/studies/`. Without muons or electrons it plots the first
+1 TeV and drawn as events per bin on a logarithmic axis, so that any dimuon resonance
+(J/psi, Upsilon, Z, ...) shows as a peak. Figures go to `output/studies/`. Without muons or electrons it plots the first
 two objects that are counted; with none, it runs the `base` collection and leaves the
 plotting to the analyst.
 

@@ -106,8 +106,8 @@ plot style, lists the configured samples, builds a fileset of two simulated samp
 `<object>_base` collections of the muons and electrons, prints the cutflow side by
 side, and draws `plot_row` panels of `muon_pt`/`electron_pt` and `muon_n`/`electron_n`
 with the samples overlaid and normalised to unit area, then the muons' eta-phi map
-and `muon_muon_invmass` (the two leading muons, log-binned from 0.2 GeV to 1 TeV, on a
-logarithmic axis).
+and `muon_muon_invmass` (the two leading muons, log-binned from 0.2 GeV to 1 TeV, events
+per bin on a logarithmic axis).
 The figures are saved in `output/studies/` at the top of the project (`output/` is
 git-ignored). A new study is a new notebook next to it; a cut or histogram it needs
 goes into `definitions/` and `configs/` like any other.

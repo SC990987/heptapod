@@ -45,8 +45,8 @@ and an editable install makes your working tree the thing that is imported.
 Then open the first study, `analysis_pkg/studies/obj_basics/basic_histograms.ipynb`: it
 runs the baseline over a file of two simulated samples and one data sample and draws
 the pT and multiplicity of the muons and electrons (of the first two objects, without
-them) with the samples overlaid, and the invariant mass of the two leading muons on a
-logarithmic axis, where any dimuon resonance shows as a peak; the figures also go to
+them) with the samples overlaid, and the invariant mass of the two leading muons, in
+events per bin on a logarithmic axis, where any dimuon resonance shows as a peak; the figures also go to
 `output/studies/`. To run it without opening Jupyter:
 
 ```bash
