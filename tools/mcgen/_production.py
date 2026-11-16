@@ -231,6 +231,7 @@ source /cvmfs/cms.cern.ch/cmsset_default.sh
 WORK=${MCGEN_WORK:-$PROD/jobs/job_$(printf %04d "$JOB")}
 AREAS=${MCGEN_AREAS:-$PROD/cmssw}
 EVENTS=${MCGEN_TEST_EVENTS:-${MCGEN_JOB_EVENTS[$JOB]}}
+TEST=${MCGEN_TEST_EVENTS:+test}     # a test: its files stay here, out of the output
 mkdir -p "$WORK" "$AREAS" && cd "$WORK" || exit 1
 STATUS=$WORK/status
 SUMMARY=$WORK/summary.txt
@@ -239,8 +240,8 @@ SUMMARY=$WORK/summary.txt
 note() { echo "$(date +%s) $*" >> "$STATUS"; echo "[mcgen] $*"; }
 fail() { note FAILED "$*"; echo "FAILED $*" >> "$SUMMARY"; exit 1; }
 [ -n "$EVENTS" ] || fail "no job $JOB in this production"
-note START job "$JOB" events "$EVENTS"
-echo "job $JOB events $EVENTS" >> "$SUMMARY"
+note START job "$JOB" events "$EVENTS" $TEST
+echo "job $JOB events $EVENTS${TEST:+ $TEST}" >> "$SUMMARY"
 for entry in "${MCGEN_STEPS[@]}"; do
     IFS='|' read -r index name tier release arch cfg input output <<< "$entry"
     note STEP "$index" "$name" start
@@ -279,6 +280,10 @@ for entry in "${MCGEN_STEPS[@]}"; do
     IFS='|' read -r index name tier release arch cfg input output <<< "$entry"
     case " $MCGEN_KEEP " in *" $tier "*) ;; *) continue ;; esac
     [ -s "$WORK/$output" ] || fail "no $output to copy"
+    if [ -n "$TEST" ]; then
+        echo "test output $tier $WORK/$output" >> "$SUMMARY"
+        continue
+    fi
     dest="${MCGEN_OUTPUT%/}/$tier/${MCGEN_NAME}_${tier}_$(printf %04d "$JOB").root"
     case "$MCGEN_OUTPUT" in
         root://*)

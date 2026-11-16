@@ -47,8 +47,11 @@ the process is whatever the generator settings say.
    about N / efficiency. A filter efficiency of zero means the settings or the filter
    are wrong: fix them before going on.
 4. **Test the whole chain.** Prepare the real production, then
-   `RunMCProduction(where="local", jobs=[0], test_events=5)`: every step runs on five
-   events in a few minutes each, and a failure shows at the step it happens. A
+   `RunMCProduction(where="local", jobs=[0], test_events=N)`, with N generated events
+   enough for about five to pass the filter (5 without a filter, about 5 / efficiency
+   with one): every step runs on those events in a few minutes each, and a failure
+   shows at the step it happens. A test keeps its files in the job's directory, not in
+   the output, and `MCProductionStatus` shows it as `test done`, not as the job. A
    premixed production needs a valid grid proxy for this already.
 5. **Produce.** Small samples run here (`where="local"`). For more, `where="condor"`:
    confirm with the user first how many jobs, how many events each, and the output

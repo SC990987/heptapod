@@ -36,6 +36,7 @@ _XSEC_BEFORE = re.compile(r"(?:Before Filter|After matching): total cross sectio
 _XSEC_FINAL = re.compile(r"After filter: final cross section = ([0-9.eE+-]+) \+- ([0-9.eE+-]+) pb")
 _FILTER = re.compile(r"Filter efficiency \(event-level\)\s*=\s*\(([0-9.eE+-]+)\) / \(([0-9.eE+-]+)\)")
 _TRIG = re.compile(r"^(\S+): TrigReport Events total = (\d+) passed = (\d+)")
+_JOB_LINE = re.compile(r"^job (\d+) events (\d+)( test)?\s*$")
 
 
 def _run(args: List[str], timeout: int = 60) -> subprocess.CompletedProcess:
@@ -128,6 +129,10 @@ def _summary(text: str) -> Dict[str, Any]:
     """Event counts per step, the generator's numbers, the outputs, from a job summary."""
     out: Dict[str, Any] = {"steps": {}, "outputs": []}
     for line in text.splitlines():
+        job_line = _JOB_LINE.match(line)
+        if job_line:
+            out["events"] = int(job_line.group(2))
+            out["test"] = bool(job_line.group(3))
         trig = _TRIG.match(line)
         if trig:
             out["steps"][trig.group(1)] = {"events_in": int(trig.group(2)),
@@ -310,10 +315,15 @@ def status(directory: Path) -> Dict[str, Any]:
         if summary_path.exists():
             text = summary_path.read_text(errors="replace")
             parsed = _summary(text)
-            summaries.append(parsed)
             entry["events_per_step"] = parsed["steps"]
-            if "DONE" in text.split():
-                entry["finished"] = True
+            if parsed.get("test"):      # a test run is not the job: its files are not in the output
+                entry["test_events"] = parsed.get("events")
+                if entry.get("state") == "done":
+                    entry["state"] = "test done"
+            else:
+                summaries.append(parsed)
+                if "DONE" in text.split():
+                    entry["finished"] = True
             failure = [line for line in text.splitlines() if line.startswith("FAILED")]
             if failure:
                 entry["error"] = failure[0][len("FAILED "):]

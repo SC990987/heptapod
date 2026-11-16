@@ -304,6 +304,17 @@ def test_status_reads_jobs_generator_and_outputs():
         (root / "jobs" / "job_0002" / "summary.txt").write_text("job 2 events 100\n")
         assert jobs.status(root)["jobs"][2]["state"] == "running"
         assert d["output"].endswith("/output")
+        # a test run (test_events) is not the job: not finished, not in the generator numbers
+        (root / "jobs" / "job_0002" / "status").write_text("1 START job 2 events 40 test\n9 DONE\n")
+        (root / "jobs" / "job_0002" / "summary.txt").write_text(
+            "job 2 events 40 test\n" + GENXSEC.replace("(25) / (100)", "(9) / (40)")
+            + f"test output NANOAOD {root}/jobs/job_0002/step5_NANOAOD.root\nDONE\n")
+        report = jobs.status(root)
+        assert report["jobs"][2]["state"] == "test done" and report["jobs"][2]["test_events"] == 40
+        assert "finished" not in report["jobs"][2] and report["job_counts"]["test done"] == 1
+        assert report["generator"]["generated"] == 200 and report["n_output_files"] == 2
+        assert 'TEST=${MCGEN_TEST_EVENTS:+test}' in production.RUN_JOB
+        assert 'echo "test output $tier $WORK/$output"' in production.RUN_JOB
 
 
 def test_job_states_and_generator_numbers():

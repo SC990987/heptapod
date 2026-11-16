@@ -246,8 +246,9 @@ def answer(d: Dict[str, Any], base: str) -> Dict[str, Any]:
         "steps": steps, "output": d["output"], "keep_tiers": d["keep_tiers"],
         "threads": d["threads"], "seed": d["seed"], "needs": needs, "notes": notes,
         "next_steps": [
-            f"RunMCProduction(production='{relative}', where='local', test_events=5) for a quick "
-            "test of the whole chain here",
+            f"RunMCProduction(production='{relative}', where='local', jobs=[0], test_events=N) to "
+            "test the whole chain here, with N generated events enough for a few to pass the "
+            "generator filter (5 without one, about 5 / efficiency with one)",
             f"RunMCProduction(production='{relative}', where='condor') for all {len(jobs)} job(s) "
             "on HTCondor (needs a grid proxy and a root:// output); confirm with the user first",
             f"MCProductionStatus(production='{relative}') to follow it",

@@ -30,9 +30,11 @@ class RunMCProductionTool(BaseTool):
     submits them. Follow it with MCProductionStatus.
 
     where="local" runs on this machine, in an el8 container. Meant for tests and small
-    samples: test_events makes each job generate only that many events (5 or 10 take
-    the whole chain in a few minutes per step and show that it works). Outputs go to
-    the production's output, a local directory or a root:// url.
+    samples. test_events makes each job generate only that many events, enough for a
+    few to pass the generator filter (5 without one, about 5 / efficiency with one), to
+    show in a few minutes per step that the whole chain works; a test keeps its files in
+    the job's directory (jobs/job_NNNN) and does not count as the job. Outputs of a real
+    run go to the production's output, a local directory or a root:// url.
 
     where="condor" submits the jobs (all, or those in `jobs`) to HTCondor, each in an
     EL8 slot, which writes its outputs to the production's root:// output. It needs a
@@ -46,7 +48,8 @@ class RunMCProductionTool(BaseTool):
         production: The production's directory, as PrepareMCProduction returned it.
         where: "local" (default) or "condor".
         jobs: Job numbers to run (default all). Locally, [0] runs the first job only.
-        test_events: Local runs only: events per job, instead of the production's.
+        test_events: Local runs only: events each job generates, instead of the
+            production's, for a test whose files stay in the job's directory.
 
     Returns (JSON):
         {"status": "ok", "production", "where", "jobs", "driver_pid", "configured",
@@ -63,7 +66,7 @@ class RunMCProductionTool(BaseTool):
     where: str = RuntimeField(default="local", description="'local' or 'condor'")
     jobs: Optional[List[int]] = RuntimeField(default=None, description="Job numbers to run (default all)")
     test_events: Optional[int] = RuntimeField(
-        default=None, description="Local only: events per job for a quick test")
+        default=None, description="Local only: events each job generates, for a test kept out of the output")
     # ---------------------------------------------------------------------- #
 
     # ---------------------------- State fields ---------------------------- #
