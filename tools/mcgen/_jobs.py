@@ -9,8 +9,8 @@ Running a production, and reading where it stands.
 ``launch`` starts bin/driver.sh in a session of its own and returns at once: the
 driver configures the production (once), then runs its jobs one after another here,
 or submits them to HTCondor. ``status`` reads what the driver and the jobs wrote
-(driver.status, jobs/*/status, the summaries), asks HTCondor about submitted jobs,
-lists the outputs, and adds up the generator's cross section and filter efficiency.
+(driver.status, jobs/*/status, the summaries, and for submitted jobs HTCondor's job
+log), lists the outputs, and adds up the generator's cross section and filter efficiency.
 """
 from __future__ import annotations
 
@@ -22,8 +22,13 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-CONDOR_STATES = {1: "idle", 2: "running", 3: "removed", 4: "completed", 5: "held",
-                 6: "transferring output", 7: "suspended"}
+# HTCondor's job log has an event per entry, "NNN (cluster.proc.subproc) date time what";
+# the events that change a job's state, and the state they leave it in
+_LOG_EVENT = re.compile(r"^(\d{3}) \((\d+)\.(\d+)\.\d+\) ")
+_LOG_STATES = {"000": "idle", "001": "running", "004": "idle", "005": "completed",
+               "007": "idle", "009": "removed", "010": "suspended", "011": "running",
+               "012": "held", "013": "idle"}
+_RETURN_VALUE = re.compile(r"Normal termination \(return value (-?\d+)\)")
 # GenXSecAnalyzer prints "Before Filter" for events Pythia generates, and "After matching"
 # for events read from a gridpack; "After filter" is the sample's cross section in both
 _XSEC_BEFORE = re.compile(r"(?:Before Filter|After matching): total cross section = "
@@ -86,9 +91,7 @@ def launch(directory: Path, mode: str, jobs: List[int],
     env.pop("MCGEN_TEST_EVENTS", None)
     if test_events:
         env["MCGEN_TEST_EVENTS"] = str(test_events)
-    args = ["bash", str(directory / "bin" / "driver.sh"), mode]
-    if mode == "local":
-        args += [str(job) for job in jobs]
+    args = ["bash", str(directory / "bin" / "driver.sh"), mode] + [str(job) for job in jobs]
     with open(directory / "driver.log", "ab") as log:
         process = subprocess.Popen(args, cwd=str(directory), stdout=log, stderr=subprocess.STDOUT,
                                    stdin=subprocess.DEVNULL, env=env, start_new_session=True)
@@ -165,31 +168,69 @@ def generator_numbers(summaries: List[Dict[str, Any]]) -> Optional[Dict[str, Any
     return out
 
 
-def _condor(directory: Path) -> Tuple[Optional[str], Dict[int, Dict[str, Any]], Optional[str]]:
-    """The cluster, {job: {"state", "exit_code"}}, and a problem in asking, if any."""
-    try:
-        cluster = (directory / "condor" / "cluster").read_text().strip()
-    except OSError:
-        return None, {}, None
-    states: Dict[int, Dict[str, Any]] = {}
-    problem = None
-    for command in (["condor_history", cluster, "-af", "McgenJob", "JobStatus", "ExitCode"],
-                    ["condor_q", cluster, "-af", "McgenJob", "JobStatus", "ExitCode"]):
-        if shutil.which(command[0]) is None:
-            problem = f"{command[0]} is not on PATH"
-            continue
-        try:
-            result = _run(command, timeout=90)
-        except subprocess.TimeoutExpired:
-            problem = f"{command[0]} took too long"
-            continue
-        for line in result.stdout.splitlines():
+def _submissions(directory: Path) -> Dict[int, List[int]]:
+    """{cluster: its jobs, in the order of its procs}, for every submission, in order."""
+    condor = directory / "condor"
+    out: Dict[int, List[int]] = {}
+    try:        # the driver's record: a line per submission, the cluster then its jobs
+        for line in (condor / "clusters").read_text().splitlines():
             parts = line.split()
-            if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
-                code = int(parts[2]) if len(parts) > 2 and parts[2].lstrip("-").isdigit() else None
-                states[int(parts[0])] = {"state": CONDOR_STATES.get(int(parts[1]), parts[1]),
-                                         "exit_code": code}
-    return cluster, states, problem
+            if parts and all(part.isdigit() for part in parts):
+                out[int(parts[0])] = [int(part) for part in parts[1:]]
+    except OSError:
+        pass
+    if not out:     # no record: the last submission, from the cluster and the submit file
+        try:
+            cluster = (condor / "cluster").read_text().strip()
+            queue = re.search(r"^queue Job in \(([^)]*)\)", (condor / "job.sub").read_text(), re.M)
+        except OSError:
+            return out
+        if cluster.isdigit() and queue:
+            out[int(cluster)] = [int(job) for job in queue.group(1).replace(",", " ").split()]
+    return out
+
+
+def _job_log(path: Path) -> Dict[Tuple[int, int], Dict[str, Any]]:
+    """{(cluster, proc): {"state", and "exit_code" or "hold_reason"}} from HTCondor's job log."""
+    try:
+        lines = path.read_text(errors="replace").splitlines()
+    except OSError:
+        return {}
+    states: Dict[Tuple[int, int], Dict[str, Any]] = {}
+    for i, line in enumerate(lines):
+        event = _LOG_EVENT.match(line)
+        if not event or event.group(1) not in _LOG_STATES:
+            continue
+        entry: Dict[str, Any] = {"state": _LOG_STATES[event.group(1)]}
+        following = lines[i + 1] if i + 1 < len(lines) else ""
+        if event.group(1) == "005":
+            code = _RETURN_VALUE.search(following)
+            entry["exit_code"] = int(code.group(1)) if code else None
+        elif event.group(1) == "012":
+            entry["hold_reason"] = following.strip()[:300]
+        states[(int(event.group(2)), int(event.group(3)))] = entry
+    return states
+
+
+def _condor(directory: Path) -> Tuple[Optional[int], Dict[int, Dict[str, Any]], Optional[str]]:
+    """The last cluster, {job: {"state", ...}}, and a problem in reading, if any.
+
+    HTCondor writes what happens to every job of every submission to the job log,
+    condor/logs/condor.log, so no schedd is asked (at the LPC, condor_history must be
+    pointed at the schedd that ran the job). A job submitted again takes the state of
+    its last submission.
+    """
+    submissions = _submissions(directory)
+    if not submissions:
+        return None, {}, None
+    log = directory / "condor" / "logs" / "condor.log"
+    events = _job_log(log)
+    states: Dict[int, Dict[str, Any]] = {}
+    for cluster, jobs in submissions.items():
+        for proc, job in enumerate(jobs):
+            states[job] = events.get((cluster, proc), {"state": "submitted"})
+    problem = None if log.exists() else "HTCondor's job log, condor/logs/condor.log, is missing"
+    return list(submissions)[-1], states, problem
 
 
 def list_outputs(output: str, tier: str) -> Tuple[List[str], Optional[str]]:
@@ -258,18 +299,15 @@ def status(directory: Path) -> Dict[str, Any]:
     for job in range(len(d["jobs"])):
         local = directory / "jobs" / f"job_{job:04d}"
         entry: Dict[str, Any] = {"job": job, "events": d["jobs"][job]}
-        summary_path = None
-        if cluster and job in condor_states:
+        summary_path = directory / "condor" / "out" / f"summary_{job}.txt"
+        if job in condor_states:
             entry.update(condor_states[job])
-            summary_path = directory / "condor" / "out" / f"summary_{job}.txt"
         elif local.exists():
             entry.update(_job_state(_events(local / "status")))
             summary_path = local / "summary.txt"
-        elif cluster:
-            entry["state"] = "not in the queue or the history"
         else:
-            entry["state"] = "not started"
-        if summary_path and summary_path.exists():
+            entry["state"] = "not submitted" if cluster else "not started"
+        if summary_path.exists():
             text = summary_path.read_text(errors="replace")
             parsed = _summary(text)
             summaries.append(parsed)

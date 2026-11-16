@@ -293,9 +293,9 @@ echo DONE >> "$SUMMARY"
 '''
 
 DRIVER = r'''#!/bin/bash
-# driver.sh local [JOB...] | condor: configure the production once, then run the given
-# jobs one after another here, or submit condor/job.sub. Started in the background by
-# RunMCProduction; progress goes to driver.status, output to driver.log.
+# driver.sh local|condor JOB...: configure the production once, then run the jobs one
+# after another here, or submit condor/job.sub, which queues the same jobs. Started in
+# the background by RunMCProduction; progress goes to driver.status, output to driver.log.
 PROD=$(cd "$(dirname "$0")/.." && pwd)
 MODE=$1; shift
 note() { echo "$(date +%s) $*" >> "$PROD/driver.status"; echo "[mcgen] $*"; }
@@ -322,6 +322,8 @@ else
     cd "$PROD/condor" || exit 1
     if condor_submit job.sub > submit.log 2>&1; then
         grep -o "submitted to cluster [0-9]*" submit.log | grep -o "[0-9]*$" > cluster
+        echo "$(cat cluster) $*" >> clusters        # every submission: the cluster, its jobs
+        for job in "$@"; do rm -f "out/summary_$job.txt"; done     # an earlier attempt's
         note SUBMIT done "$(cat cluster)"
     else
         note SUBMIT failed; note DRIVER failed; exit 1

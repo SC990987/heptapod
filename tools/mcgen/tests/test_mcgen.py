@@ -320,6 +320,82 @@ def test_job_states_and_generator_numbers():
     assert numbers["generated"] == 2400 and numbers["filter_efficiency"] == 0.5
 
 
+# HTCondor's job log as the LPC's schedds write it (hosts shortened)
+JOB_LOG = """000 (5001.000.000) 2026-11-15 23:17:16 Job submitted from host: <131.225.204.62:9618?alias=lpcschedd5.fnal.gov>
+...
+000 (5001.001.000) 2026-11-15 23:17:16 Job submitted from host: <131.225.204.62:9618?alias=lpcschedd5.fnal.gov>
+...
+000 (5001.002.000) 2026-11-15 23:17:16 Job submitted from host: <131.225.204.62:9618?alias=lpcschedd5.fnal.gov>
+...
+040 (5001.000.000) 2026-11-15 23:17:49 Started transferring input files
+	Transferring to host: <131.225.204.219:9618?alias=cmswn2272.fnal.gov>
+...
+001 (5001.000.000) 2026-11-15 23:17:55 Job executing on host: <131.225.204.219:9618?alias=cmswn2272.fnal.gov>
+...
+001 (5001.001.000) 2026-11-15 23:18:02 Job executing on host: <131.225.204.220:9618?alias=cmswn2273.fnal.gov>
+...
+006 (5001.000.000) 2026-11-15 23:19:04 Image size of job updated: 29
+	1  -  MemoryUsage of job (MB)
+...
+005 (5001.001.000) 2026-11-15 23:24:10 Job terminated.
+	(1) Normal termination (return value 65)
+		Usr 0 00:05:50, Sys 0 00:00:15  -  Run Remote Usage
+...
+005 (5001.000.000) 2026-11-15 23:26:55 Job terminated.
+	(1) Normal termination (return value 0)
+		Usr 0 00:05:50, Sys 0 00:00:15  -  Run Remote Usage
+...
+012 (5001.002.000) 2026-11-15 23:30:00 Job was held.
+	Error from slot1_1@cmswn2272.fnal.gov: memory usage exceeded request_memory
+	Code 34 Subcode 0
+...
+000 (5002.000.000) 2026-11-15 23:40:00 Job submitted from host: <131.225.204.62:9618?alias=lpcschedd5.fnal.gov>
+...
+001 (5002.000.000) 2026-11-15 23:41:00 Job executing on host: <131.225.204.221:9618?alias=cmswn2274.fnal.gov>
+...
+"""
+
+
+def test_condor_jobs_are_read_from_the_job_log():
+    with tempfile.TemporaryDirectory() as tmp:
+        d = _create(tmp, pileup="none", events=300, events_per_job=100,
+                    output="root://cmseos.fnal.gov//store/user/someone/jpsi")
+        root = Path(tmp) / "jpsi"
+        condor = root / "condor"
+        (condor / "logs").mkdir(parents=True, exist_ok=True)
+        (condor / "out").mkdir(parents=True, exist_ok=True)
+        (condor / "logs" / "condor.log").write_text(JOB_LOG)
+        # all three jobs submitted in cluster 5001, then job 1 again in cluster 5002
+        (condor / "clusters").write_text("5001 0 1 2\n5002 1\n")
+        (condor / "cluster").write_text("5002\n")
+        (condor / "out" / "summary_0.txt").write_text(GENXSEC + "DONE\n")
+        cluster, states, problem = jobs._condor(root)
+        assert cluster == 5002 and problem is None
+        assert states == {0: {"state": "completed", "exit_code": 0},
+                          1: {"state": "running"},
+                          2: {"state": "held", "hold_reason": "Error from slot1_1@cmswn2272.fnal.gov: "
+                                                              "memory usage exceeded request_memory"}}
+        original = jobs.list_outputs
+        jobs.list_outputs = lambda output, tier: ([f"{output}/{tier}/jpsi_{tier}_0000.root"], None)
+        try:
+            report = jobs.status(root)
+        finally:
+            jobs.list_outputs = original
+        assert report["condor_cluster"] == 5002
+        assert report["job_counts"] == {"done": 1, "running": 1, "held": 1}
+        assert report["jobs"][0]["finished"] and report["generator"]["passed_filter"] == 25
+        assert report["for_framework"]["sample_locations"][0]["xsec"] == 5.0e5
+        # with no record of the submissions, the last one: the cluster and the submit file
+        (condor / "clusters").unlink()
+        (condor / "cluster").write_text("5001\n")
+        (condor / "job.sub").write_text(production.condor_submit_file(root, d, "/tmp/x509up_u1", [0, 1, 2]))
+        assert jobs._condor(root)[1][1] == {"state": "completed", "exit_code": 65}
+        (condor / "logs" / "condor.log").unlink()
+        assert jobs._condor(root) == (5001, {0: {"state": "submitted"}, 1: {"state": "submitted"},
+                                             2: {"state": "submitted"}},
+                                      "HTCondor's job log, condor/logs/condor.log, is missing")
+
+
 # --------------------------------------------------------------------------- #
 # the tools
 # --------------------------------------------------------------------------- #
