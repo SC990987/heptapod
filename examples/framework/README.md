@@ -55,6 +55,130 @@ Parts that only some analyses need are added on request:
 | `schema` | a customised NanoAOD schema: behaviours for extra collections, cross-references, hidden branches |
 | `chain_report` | a regression report over small committed test files, with a GitHub workflow |
 
+## Using this branch
+
+The `framework` and `coffea` bundles are on the `thrust2` branch of the fork
+[SC990987/heptapod](https://github.com/SC990987/heptapod). To run them on your own
+analysis:
+
+### 1. Get the branch
+
+In a clone of heptapod, add the fork as a remote and check the branch out:
+
+```bash
+git remote add sc https://github.com/SC990987/heptapod.git
+git fetch sc
+git switch -c thrust2 --track sc/thrust2
+```
+
+Or clone the fork at that branch:
+
+```bash
+git clone -b thrust2 https://github.com/SC990987/heptapod.git
+cd heptapod
+```
+
+### 2. Install
+
+With Python 3.12 or 3.13 (on the LPC, set that up first as described below), from the
+repository root:
+
+```bash
+pip install toolbase
+tb install . --bundle framework --bundle coffea
+```
+
+`tb install` builds the toolkit's own environment under `~/.toolbase/`. To read
+`root://` files (to inspect a file on EOS, or for the check's short run on a sample
+there), add an XRootD client to it, with the toolkit's python:
+
+```bash
+PY=$(grep -h '^python_path:' ~/.toolbase/cache/heptapod/*/.install_meta.yaml | head -1 | awk '{print $2}')
+$PY -m pip install fsspec-xrootd xrootd
+```
+
+`tb install .` copies the whole clone into `~/.toolbase/`, following links. Once you
+have launched from a clone, its sandboxes (`examples/framework/sandbox001/`, ...) link
+to your data, and installing from it again would copy that data too. To update the
+toolkit later, install from a fresh clone of the branch with `--rebuild` added, then
+run the `pip install` above again: the rebuild undoes it.
+
+### On the LPC
+
+Do all of this in a shell where `cmsenv` was never run. cmsenv's `python3` is 3.12,
+but it is CMSSW's: it starts only with the `LD_LIBRARY_PATH` that cmsenv sets, so a
+toolkit built on it would run in a cmsenv shell only, where CMSSW's libraries (fastjet's
+among them) come before the ones the toolkit's packages bring. Without cmsenv,
+`python3` is the system's 3.9, too old for toolbase. Install uv into `~/nobackup`
+(nothing is added to your shell profiles), get Python 3.12 with it, and make a venv
+for toolbase there too:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL=$HOME/nobackup/uv/bin sh
+export UV_PYTHON_INSTALL_DIR=$HOME/nobackup/uv/python
+$HOME/nobackup/uv/bin/uv python install --no-bin 3.12
+$($HOME/nobackup/uv/bin/uv python find --system 3.12) -m venv $HOME/nobackup/venvs/toolbase
+source $HOME/nobackup/venvs/toolbase/bin/activate
+```
+
+The toolkit's environment takes 1.2 GB with these two bundles, and pip's cache another
+0.3 GB: most of the 2 GB home. If `~/.toolbase` does not exist yet, make it a link to a
+folder on nobackup, and send pip's cache there as well:
+
+```bash
+[ -e ~/.toolbase ] || { mkdir -p ~/nobackup/toolbase && ln -s ~/nobackup/toolbase ~/.toolbase; }
+export PIP_CACHE_DIR=$HOME/nobackup/pip-cache
+```
+
+Then install as in step 2. In a later session,
+`source $HOME/nobackup/venvs/toolbase/bin/activate` puts `tb` back on the PATH; export
+`PIP_CACHE_DIR` again before a `tb install`.
+
+Files on EOS are read over XRootD, which needs a Kerberos ticket: `klist` shows
+whether you have one, `kinit $USER@FNAL.GOV` gets one. Official samples under
+`/store/mc` also need a grid proxy: `voms-proxy-init -voms cms`.
+
+### 3. Launch an agent on your analysis
+
+From the repository root, with toolbase's venv active (so that `tb` is on the PATH) and
+Claude Code installed:
+
+```bash
+python examples/framework/launch.py --harness claude-code
+```
+
+It makes a sandbox under `examples/framework/`, wires the tools into it and starts
+Claude Code there (`--no-launch` stops after the sandbox). Point it at your data in
+either of two ways:
+
+- `ANALYSIS_DATA=/path/to/file_or_directory` in front of the command links a local
+  ROOT file or directory into the sandbox as `data/`;
+- or name `root://` directories and files in your request: the tools list and read
+  them where they are.
+
+Then ask for the framework as you would ask a colleague: where it goes (your git
+repository's url), where the simulation and the data are, how the samples should be
+named, and the analysis's objects, triggers and cuts. [`task_prompt.md`](task_prompt.md)
+has requests to start from; "Start in your repository, from where your samples are" is
+the one for a new analysis.
+
+### 4. Afterwards
+
+The framework is committed in your repository, in a clone inside the sandbox, and
+never pushed: look at the commit, then push it with the command the agent hands over,
+run from the sandbox: `git -C <clone> push -u origin HEAD`, where `<clone>` is the
+clone's directory there. The package does not need HEPTAPOD: install it into any
+environment that has coffea with `pip install -e .` from the repository. To have the
+tools check frameworks with that environment rather than the toolkit's, set
+`ANALYSIS_PYTHON=/path/to/env/bin/python` in front of the launch command, or for every
+launch:
+
+```bash
+tb config set --user heptapod analysis_python /path/to/env/bin/python
+```
+
+The quick start below says more about each step.
+
 ## Quick start
 
 ### 1. Install the toolkit

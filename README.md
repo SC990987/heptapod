@@ -6,6 +6,8 @@
   <img src="logo/heptapod.svg" alt="HEPTAPOD" width="150">
 </p>
 
+> **This branch (`thrust2`)** adds tools that build a coffea analysis framework for your own analysis: see [Using this branch](examples/framework/README.md#using-this-branch).
+
 ## Overview
 
 **HEPTAPOD** (High-Energy Physics Toolkit for Agentic Programming/Planning, Orchestration, and Deployment) is an open toolkit for **integrating LLM agents into high-energy physics workflows**, spanning symbolic amplitude calculations, Monte Carlo event generation, and data analysis.
