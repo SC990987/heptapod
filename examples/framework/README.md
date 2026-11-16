@@ -63,6 +63,10 @@ analysis:
 
 ### 1. Get the branch
 
+On the LPC, do this in `~/nobackup` (`cd ~/nobackup` first): the launcher's sandboxes,
+and everything an agent builds and runs in them, end up inside the clone, and the home
+has 2 GB.
+
 In a clone of heptapod, add the fork as a remote and check the branch out:
 
 ```bash
@@ -136,7 +140,11 @@ Then install as in step 2. In a later session,
 
 Files on EOS are read over XRootD, which needs a Kerberos ticket: `klist` shows
 whether you have one, `kinit $USER@FNAL.GOV` gets one. Official samples under
-`/store/mc` also need a grid proxy: `voms-proxy-init -voms cms`.
+`/store/mc` also need a grid proxy: `voms-proxy-init -voms cms`. Until you have made
+one, reading a `root://` file prints
+`TLS: Unable to use cert+key file .../x509up_u<uid>; does not exist.`, because the
+LPC's login profile points `X509_USER_PROXY` there; the file is read with the ticket
+all the same.
 
 ### 3. Launch an agent on your analysis
 

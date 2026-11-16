@@ -400,6 +400,14 @@ and `xrootd` 6.2.1 by pip:
 | The `root://` file read with a Kerberos ticket and no grid proxy | 2272 entries |
 | "Using this branch", every command as written, in a clean login shell whose home was a new folder with its own `nobackup` | all ran, after three fixes found this way: `uv python find --system` (without it uv took the `.venv` of the directory it ran in), `uv python install --no-bin` (without it uv linked `~/.local/bin/python3.12` and suggested editing the shell profiles), and the sizes, now measured. `pip install toolbase` gave 0.16.0, and `tb install` took 4.5 minutes: the toolkit's environment is 1.2 GB, pip's cache 0.3 GB, and 28 kB stayed in the home. The three launches with `--no-launch` (plain, with `ANALYSIS_DATA`, with `ANALYSIS_PYTHON`) wrote their sandboxes, and `tb config set --user` its config. A framework built in a local bare repository was pushed with the command of the scaffold's answer, run from the sandbox (from elsewhere its relative path fails, now said). A rebuild from a fresh clone replaced the toolkit and dropped the XRootD client until it was installed again. `pip install -e .` put the generated project into an environment with coffea, and its `run_analysis --help` ran from outside it. `kinit` and `voms-proxy-init` were not run: they ask for a password |
 
+After the push (5019791), the section was followed again, word for word, as a new user:
+a fresh home, a fresh clone of `tonymenzo/heptapod` with the fork added as a remote, as
+far as `launch.py --harness claude-code --no-launch` and the scaffold and check of the
+file above, which gave the same answers. Nothing failed. Two things the section had not
+said were added: on the LPC, make the clone on nobackup; and the
+`TLS: Unable to use cert+key file ...` message that XRootD prints when there is no
+proxy is harmless.
+
 A central NanoAOD MC file and a data file were not tried.
 
 `tb install . --bundle framework --bundle coffea --rebuild`, run in the clone the tests
