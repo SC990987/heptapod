@@ -236,7 +236,7 @@ What makes it independent of one analysis, and keeps mistakes from passing unnot
 The bundle was written where none of coffea, awkward, uproot, hist, fastjet, dask,
 orchestral or toolbase could be installed. It was then run at the Fermilab LPC, first on
 7 and 8 October 2026 at commit 119d31b, and again on 8 October at 30ea002, in two
-environments:
+environments (the fourth and fifth runs, on 21 October and 15 November, in A only):
 
 | | A: the toolkit's own | B: an existing analysis environment |
 |---|---|---|
@@ -371,8 +371,44 @@ of `scripts/add_samples.py`. Rebuilt with `year="2018"` from the file lists of t
 existing signal configs of that production (90 samples in 4,356 lines, and 5,234
 lines), with their `config`, `tag`, `comment` and `name_format`, both came out line for
 line as the originals, apart from one blank line in each and the files commented out
-there by hand as unreadable, which a listing cannot know about. So far this was checked
-only off the LPC.
+there by hand as unreadable, which a listing cannot know about. This was checked only
+off the LPC until the fifth run (next section).
+
+### Fifth run at the LPC (89ce3bf, 15 November 2026)
+
+At 89ce3bf, which makes the examples in generated frameworks and in the tool
+descriptions generic (what the engine does is unchanged); the commits after it change
+only documentation, such as "Using this branch" in `examples/framework/README.md`.
+Environment A was rebuilt with
+`tb install . --bundle framework --bundle coffea --rebuild` from a copy of the
+repository's tracked files (see the end of this section), which brought coffea
+2026.11.0, awkward 2.15.0, orchestral 1.11.1 and pydantic 2.14.3 (Python 3.12.14,
+uproot 5.7.7, hist 2.12.1, numba 0.66.0, fastjet 3.5.2.0), then `fsspec-xrootd` 0.5.5
+and `xrootd` 6.2.1 by pip:
+
+| What | Result |
+|------|--------|
+| `tools/analysis/test_nanoaod_inspect.py --no-skips` (15) | 15 passed |
+| `tests/test_framework.py --no-skips` (38) | 38 passed |
+| `tests/test_framework_run.py` (24) | 23 passed and the dask test skipped (dask was not installed). `test_check_tool_runs_the_generated_checker`, which failed in the fourth run, passed: a sample without a year takes the project's `YEAR` (7a74fae) |
+| `tb validate` | the toolkit valid, 60 tools |
+| The scaffold (`sample_file` the `root://` url of `CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3_part-0.root` on EOS, `objects={"dsaMuons": "DSAMuon"}`, `year="2018"`), the `lepton_jets` component and the check of that sample, called from python as below | all `status: ok`. The scaffold's notes: GenPart read in its polar set, DSAMuon re-zipped with the muon mass, 20 other collections with pt/eta/phi, no luminosity, no cross section. The check: `ok: true`, no static error, the two expected warnings (no luminosity for 2018, no cross section). The sample, written to `samples.yaml` without a year, is in 2018, as configured and in the run's metadata: the `YEAR` change on a real file. 2272 events; `baseline` kept 2272 after the PV filter, `baseline_2muons` 1759, `baseline_2ljs` 2084; no histogram stayed empty |
+| The lepton-jet mass, with the code below | the peak bin centred at 505 GeV (2058 entries), now with the muon baseline at 5 GeV |
+| The first study of that project, `jupyter nbconvert --to html --execute` (nbconvert and ipykernel installed into A) | ran in 15 s; `basic_pt.png`, `basic_multiplicity.png` and `muon_eta_phi.png` in `output/studies/` |
+| The project grepped for the old analysis-specific text (`sidm`, `lpcmetx`, `2Mu2E`, `llpNanoAOD`, ...) | found only in the sample's own name and path: `samples.yaml`, `cross_sections.yaml`, `README.md`, both notebooks, `.analysis_framework.json` |
+| `scripts/add_samples.py` with the arguments of `configs/samples/README.md`, on a local copy of that layout | wrote the groups the README shows: `ZPrime_M500_W5` with `path: ZPrime_M-500_W-5/nano/`, and `SingleMuon_2018C` as one data sample of 2018 |
+| The `root://` file read with a Kerberos ticket and no grid proxy | 2272 entries |
+| "Using this branch", every command as written, in a clean login shell whose home was a new folder with its own `nobackup` | all ran, after three fixes found this way: `uv python find --system` (without it uv took the `.venv` of the directory it ran in), `uv python install --no-bin` (without it uv linked `~/.local/bin/python3.12` and suggested editing the shell profiles), and the sizes, now measured. `pip install toolbase` gave 0.16.0, and `tb install` took 4.5 minutes: the toolkit's environment is 1.2 GB, pip's cache 0.3 GB, and 28 kB stayed in the home. The three launches with `--no-launch` (plain, with `ANALYSIS_DATA`, with `ANALYSIS_PYTHON`) wrote their sandboxes, and `tb config set --user` its config. A framework built in a local bare repository was pushed with the command of the scaffold's answer, run from the sandbox (from elsewhere its relative path fails, now said). A rebuild from a fresh clone replaced the toolkit and dropped the XRootD client until it was installed again. `pip install -e .` put the generated project into an environment with coffea, and its `run_analysis --help` ran from outside it. `kinit` and `voms-proxy-init` were not run: they ask for a password |
+
+A central NanoAOD MC file and a data file were not tried.
+
+`tb install . --bundle framework --bundle coffea --rebuild`, run in the clone the tests
+ran from, failed: that clone also holds git-ignored sandboxes of another example, and
+`tb install .` copies the whole clone, following links, so it copied the EOS directory
+their `data` links lead to and then stopped at links whose targets are gone
+(`shutil.Error: ... No such file or directory`). `--rebuild` had already removed the
+installed toolkit. Installed from a copy of the tracked files instead. "Using this
+branch" says not to install from a clone that has been launched from.
 
 ### Checked where the libraries could not be installed
 
@@ -400,6 +436,8 @@ since passed at the LPC.
 - A real data file: `LumiMask` with a golden JSON, `'gens' is not available in this
   sample`, and a check given a simulated and a data sample in one call. The data
   paths ran only on the synthetic files of `tests/test_framework_run.py`.
+- A central NanoAOD MC file: the real files run so far are one private LLP NanoAOD
+  production's.
 - The chain report's GitHub workflow.
 - `scaleout.make_dask_client`, `check_voms_proxy` and `make_lpc_client`, which can
   only be tried with a scheduler or at the LPC with jobs. `find_lpc_image` is tested

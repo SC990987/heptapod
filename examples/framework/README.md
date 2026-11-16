@@ -314,17 +314,16 @@ jupyter nbconvert --to html --execute my_analysis/studies/obj_basics/basic_histo
 ## Status
 
 The `framework` bundle is new. It was written and statically checked in an
-environment without coffea, and run at the Fermilab LPC in October 2026: its tests
-and a generated framework against coffea 2025.5.0rc2 and 2026.9.0, on an LLP NanoAOD
-signal file and on synthetic files; this launcher with `--no-launch`; the tools served
-over MCP from a sandbox it made; and one headless agent session in such a sandbox
-(`claude -p`, not started by the launcher). No data file has been run, and the
-launcher has not been tried with `--harness codex` or `opencode`. Treat a failing
-check on a freshly scaffolded project as a possible fault of the generator, not only
-of the analysis.
+environment without coffea, and run at the Fermilab LPC in October and November 2026:
+its tests and a generated framework against coffea 2025.5.0rc2, 2026.9.0 and
+2026.11.0, on an LLP NanoAOD signal file and on synthetic files; the first study on
+that file; this launcher with `--no-launch`; the tools served over MCP from a sandbox
+it made; one headless agent session in such a sandbox (`claude -p`, not started by the
+launcher); and the steps of "Using this branch", in a new home. No data file and no
+central NanoAOD file has been run, and the launcher has not been tried with
+`--harness codex` or `opencode`. Treat a failing check on a freshly scaffolded project
+as a possible fault of the generator, not only of the analysis.
 [tools/framework/README.md](../../tools/framework/README.md#verification-status)
-lists what was and was not checked and the commands that check it. Building in a git
-repository, sample locations and the first study were added after the third check at
-the LPC and have so far run only on stand-ins for the libraries.
+lists what was and was not checked and the commands that check it.
 
 This example has no recorded transcript yet.
