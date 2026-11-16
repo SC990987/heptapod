@@ -55,19 +55,19 @@ class ScaffoldAnalysisFrameworkTool(BaseTool):
 
     Where the events are: `sample_locations` names the directories that hold the
     simulation and the data (local, or root:// on EOS). Their files are listed and
-    written as cms-sidm/SIDM writes its ntuple configs: a file per directory under
-    configs/samples/ (signal_2mu2e_v10.yaml, data.yaml), holding a comment line, the
-    group (llpNanoAOD_v2) with the directory as its path, and one sample per
-    sub-directory with its files and the directory they are in. Samples are named by
-    `name_format` (2Mu2E_{MBs}GeV_{MDp}GeV_{ctau}mm gives SIDM's names), or else after
-    their directories.
+    written into a config file per directory under configs/samples/ (signal.yaml,
+    data.yaml), holding a comment line, the group (nanoaod_v1) with the directory as
+    its path, and one sample per sub-directory with its files and the directory they
+    are in. Samples are named by `name_format` (ZPrime_M{M}_W{W} turns the directory
+    ZPrime_M-500_W-5 into the sample ZPrime_M500_W5), or else after their directories.
 
-    What it starts with: objects and a menu of cuts for them, a baseline selection
-    (muons pT > 5 GeV, electrons pT > 10 GeV, |eta| < 2.4, as cms-sidm/SIDM's lepton
-    sources), basic histograms of every object (pT, multiplicity, eta-phi), and a
-    first study, studies/obj_basics/basic_histograms.ipynb, that processes a file of
-    two simulated samples and one data sample and plots the muon and electron
-    histograms with the samples overlaid.
+    What it starts with: objects and a menu of cuts for them, a baseline selection of
+    basic placeholder cuts (muons pT > 5 GeV, electrons pT > 10 GeV, |eta| < 2.4,
+    photons pT > 20 GeV, jets pT > 30 GeV), basic histograms of every object (pT,
+    multiplicity, eta-phi), and a first study,
+    studies/obj_basics/basic_histograms.ipynb, that processes a file of two simulated
+    samples and one data sample and plots the muon and electron histograms with the
+    samples overlaid.
 
     After it returns:
       1. run CheckAnalysisFramework on the project (static checks, then a short run);
@@ -103,8 +103,7 @@ class ScaffoldAnalysisFrameworkTool(BaseTool):
             selection, with or without the "HLT_" prefix.
         year: Run period of the samples, e.g. "2018". It becomes the package's YEAR,
             which a sample that names no period takes, so the sample configs write a
-            year only for data and for simulation of another period, as cms-sidm/SIDM's
-            do (its signal configs name none and are read as 2018).
+            year only for data and for simulation of another period.
         lumi: Integrated luminosity of that period in /pb. Needs `year`.
         golden_json: Golden JSON for that period, relative to the working directory;
             copied into the package's data/ directory. Needs `year`.
@@ -122,9 +121,8 @@ class ScaffoldAnalysisFrameworkTool(BaseTool):
             configs/samples/ (default: <directory's name>.yaml), with `comment` on the
             line above it. Every sub-directory holding ROOT files becomes a sample,
             named by `name_format`, a format whose fields are the KEY-VALUE pieces of
-            the directory names ("2Mu2E_{MBs}GeV_{MDp}GeV_{ctau}mm" names
-            ..._MBs-500_MDp-0p25_ctau-0p4_v3 2Mu2E_500GeV_0p25GeV_0p4mm; {dir} is the
-            whole name), or else after the
+            the directory names ("ZPrime_M{M}_W{W}" turns ZPrime_M-500_W-5 into
+            ZPrime_M500_W5; {dir} is the whole name), or else after the
             directory without the part all of them share. With `name`, the whole
             directory is one sample (files sitting directly in the directory are one
             sample, named after it). `xsec` only for a location that holds a single
@@ -212,7 +210,7 @@ class ScaffoldAnalysisFrameworkTool(BaseTool):
         description="Directories holding the simulation and the data: [{'directory' (root:// "
                     "url or inside the working directory), 'is_data', 'year', 'config' (file "
                     "under configs/samples/), 'tag', 'comment', 'name_format' (e.g. "
-                    "'2Mu2E_{MBs}GeV_{MDp}GeV_{ctau}mm'), 'name' (whole directory as one "
+                    "'ZPrime_M{M}_W{W}'), 'name' (whole directory as one "
                     "sample)}]; one sample per sub-directory")
     components: Optional[List[str]] = RuntimeField(
         default=None,

@@ -107,8 +107,8 @@ def as_bool(value):
 
 def sample_year(cfg, block=None):
     """The run period of a sample, as text: its own ``year``, else its group's, else the
-    project's ``YEAR`` (``analysis_pkg/__init__.py``), as cms-sidm/SIDM takes "2018" for a
-    sample that names none. ``year: ""`` says the sample has no run period."""
+    project's ``YEAR`` (``analysis_pkg/__init__.py``). ``year: ""`` says the sample has no
+    run period."""
     for where in (cfg, block):
         if isinstance(where, dict) and where.get("year") is not None:
             return str(where["year"])
@@ -156,9 +156,8 @@ def sample_configs():
 def find_samples(location_cfg=None, tag=None):
     """Every group of samples, as ``[(config file, tag, block), ...]``.
 
-    The samples of an analysis are spread over several configs, one per production as
-    cms-sidm/SIDM keeps them (``signal_2mu2e_v10.yaml``, ``data.yaml``, ...), and two of
-    them may well use the same tag. Without ``location_cfg`` every file under
+    The samples of an analysis are spread over several configs, one per production
+    (``signal.yaml``, ``data.yaml``, ...), and two of them may well use the same tag. Without ``location_cfg`` every file under
     ``configs/samples/`` is read; ``tag`` keeps the groups of that name.
     """
     names = sample_configs() if location_cfg is None else [location_cfg]

@@ -1112,8 +1112,8 @@ def test_samples_found_in_directories_and_the_first_study():
         synthetic.write_nanoaod(str(path), n=200, seed=seed, data=is_data)
     representative = str(base / "data" / signal_500 / "part-0.root")
     layout = nanoaod_layout.split_collections(nanoaod_layout.read_tree_layout(representative)["branches"])
-    # written as cms-sidm/SIDM writes its ntuple configs: a file per production, one group
-    # name for both, and SIDM's names for the signal points
+    # a config per production, one group name for both, and the signal points named
+    # by a name format
     locations = [{"directory": str(base / "data" / "signal"), "year": "2018", "tag": "llpNanoAOD_v2",
                   "config": "signal_2mu2e_v10.yaml", "comment": "2mu2e signal samples",
                   "name_format": "2Mu2E_{MBs}GeV"},
@@ -1130,8 +1130,7 @@ def test_samples_found_in_directories_and_the_first_study():
                                         "data.yaml": {"llpNanoAOD_v2": 1}}
     configs = project / "fw_study" / "configs" / "samples"
     signal = yaml.safe_load((configs / "signal_2mu2e_v10.yaml").read_text())["llpNanoAOD_v2"]
-    # simulation of the project's run period names no year, as in SIDM's signal configs;
-    # data states its year
+    # simulation of the project's run period names no year; data states its year
     assert signal["samples"]["2Mu2E_500GeV"] == {
         "files": ["part-0.root", "part-1.root"], "path": "SIDM_BsTo2DpTo2Mu2e_MBs-500_v3/LLPnanoAODv2/"}
     data = yaml.safe_load((configs / "data.yaml").read_text())["llpNanoAOD_v2"]

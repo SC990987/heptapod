@@ -12,8 +12,8 @@ BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 # Name of the TTree that holds the events in the input files.
 TREE_NAME = "__TREE_NAME__"
 
-# Run period of a sample whose config names none, the way cms-sidm/SIDM takes "2018" for
-# its signal samples ("" for none). The periods are in configs/run_periods.yaml.
+# Run period of a sample whose config names none ("" for none). The periods are in
+# configs/run_periods.yaml.
 YEAR = "__YEAR__"
 
 __version__ = "0.1.0"

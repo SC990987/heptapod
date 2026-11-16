@@ -30,8 +30,8 @@ class PlanError(ValueError):
 
 # Starting kinematic menus per collection: (pT thresholds, |eta| thresholds, baseline pT,
 # baseline |eta|). They are starting points for the analyst to edit, not recommendations.
-# The baselines of muons, electrons and photons are the lepton-jet source cuts of
-# cms-sidm/SIDM (muons pT > 5 GeV, electrons pT > 10 GeV, both |eta| < 2.4).
+# The baselines are basic placeholder cuts: muons pT > 5 GeV, electrons pT > 10 GeV, both
+# |eta| < 2.4, photons pT > 20 GeV, jets pT > 30 GeV.
 KINEMATIC_MENUS = {
     "Muon": ([5, 10, 20, 30], [2.4], 5, 2.4),
     "Electron": ([10, 20, 30], [2.4, 2.5], 10, 2.4),
@@ -67,7 +67,7 @@ OBJECT_LABELS = {
 }
 
 # Upper end (GeV) of the pT histograms; the rest use default_binnings["pt"] (0 to 200).
-# The leptons and photons go to 500 GeV, as in cms-sidm/SIDM's hists.py.
+# The leptons and photons go to 500 GeV.
 PT_RANGES = {"Muon": 500, "Electron": 500, "Photon": 500, "DSAMuon": 500, "Jet": 500,
              "FatJet": 1000, "MET": 500, "PuppiMET": 500, "GenPart": 500}
 # Multiplicity binnings (nbins, xmin, xmax) where ten objects per event is far too few.
@@ -790,8 +790,8 @@ _NUMBER = re.compile(r"[-+]?(\d[\d_]*\.?[\d_]*|\.\d+)([eE][-+]?\d+)?")
 
 def yaml_text(text: str) -> str:
     """A string as a yaml file shows it: plain where it is read back as the same string
-    (paths, file names, sample names, as cms-sidm/SIDM's configs have them), double
-    quoted where yaml would read something else (2018, true, a: b)."""
+    (paths, file names, sample names), double quoted where yaml would read something
+    else (2018, true, a: b)."""
     text = str(text)
     if _PLAIN.fullmatch(text) and not _NUMBER.fullmatch(text):
         try:
@@ -804,12 +804,12 @@ def yaml_text(text: str) -> str:
 
 
 def _sample_group(group: Dict[str, Any], year: Optional[str] = None) -> List[str]:
-    """One group of a sample config, in cms-sidm/SIDM's layout: the comment, the tag,
-    its path, and per sample its files, then is_data, path, skim_factor and year.
+    """One group of a sample config: the comment, the tag, its path, and per sample its
+    files, then is_data, path, skim_factor and year.
 
     ``year`` is the project's run period (YEAR in the package), which a sample without
-    one takes. As in SIDM's configs, data states its year and simulation only a year
-    that differs from it (SIDM's signal samples name none and are taken as 2018)."""
+    one takes. So data states its year, and simulation only a year that differs from
+    it."""
     default = str(year or "")
     out = [f"# {group['comment']}"] if group.get("comment") else []
     out += [f"{yaml_text(group['tag'])}:", f"  path: {yaml_text(group.get('path') or '')}",
@@ -833,9 +833,9 @@ def render_sample_configs(samples: List[Dict[str, Any]], groups: List[Dict[str, 
                           package: str = PLACEHOLDER_PACKAGE,
                           year: Optional[str] = None) -> Dict[str, str]:
     """``{file name: text}`` of the configs under configs/samples/: the samples given file
-    by file in samples.yaml (group "main"), and each location's group in its own file,
-    laid out as cms-sidm/SIDM's ntuple configs (signal_2mu2e_v10.yaml, data.yaml).
-    ``year`` is the project's run period: simulation in it is written without a year."""
+    by file in samples.yaml (group "main"), and each location's group in its own file
+    (signal.yaml, data.yaml). ``year`` is the project's run period: simulation in it is
+    written without a year."""
     files: Dict[str, List[str]] = {}
     if samples or not groups:
         out = []
@@ -868,19 +868,19 @@ def render_samples_readme(package: str = PLACEHOLDER_PACKAGE) -> str:
     """configs/samples/README.md: the layout of the sample configs."""
     return f"""# Sample configs
 
-One file per production, as cms-sidm/SIDM keeps its ntuple configs (`signal_2mu2e_v10.yaml`,
-`data.yaml`, ...). Each file holds one or more groups of samples:
+One file per production (`signal.yaml`, `data.yaml`, ...). Each file holds one or more
+groups of samples:
 
 ```yaml
-# 2mu2e signal samples with correct lifetime and no unwanted gen filters
-llpNanoAOD_v2:                              # the group (tag)
-  path: root://cmseos.fnal.gov//store/group/lpcmetx/SIDM/ULSignalSamples/2018_v10/BsTo2DpTo2Mu2e/
+# ZPrime signal samples, one directory per mass point
+nanoaod_v1:                                 # the group (tag)
+  path: root://cmseos.fnal.gov//store/user/<you>/signal/
   samples:
-    2Mu2E_500GeV_0p25GeV_0p4mm:             # the sample's name
+    ZPrime_M500_W5:                         # the sample's name
       files:
-      - CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3_part-0.root
-      # - ..._part-7.root  # a file that cannot be read can be commented out
-      path: CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3/LLPnanoAODv2/
+      - nano_1.root
+      # - nano_7.root  # a file that cannot be read can be commented out
+      path: ZPrime_M-500_W-5/nano/
 ```
 
 A file is read from the group's `path`, then the sample's `path`, then its name in
@@ -888,21 +888,25 @@ A file is read from the group's `path`, then the sample's `path`, then its name 
 `is_data: true` (data), `year` (its run period in `configs/run_periods.yaml`) and
 `skim_factor` (the fraction of the original events a skim kept). A sample without a
 `year` takes its group's, if the group has one, or else `YEAR` of
-`{package}/__init__.py`, the project's run period, the way SIDM takes 2018 for its
-signal samples; so, as in SIDM's configs, data states its year and simulation only a
-year that is not `YEAR`. Simulated samples take their cross section from
-`configs/cross_sections.yaml`, under the sample's name.
+`{package}/__init__.py`, the project's run period. So data states its year, and
+simulation only a year that is not `YEAR`. Simulated samples take their cross section
+from `configs/cross_sections.yaml`, under the sample's name.
 
-Every file here is read: `utilities.make_fileset(["2Mu2E_500GeV_0p25GeV_0p4mm"])` finds the
-sample wherever it is. A name used in two groups needs its group (`tag=`), and in two
-files with the same group name also its file (`location_cfg=`); the check says so.
+Every file here is read: `utilities.make_fileset(["ZPrime_M500_W5"])` finds the sample
+wherever it is. A name used in two groups needs its group (`tag=`), and in two files
+with the same group name also its file (`location_cfg=`); the check says so.
 
-To add the samples of a directory, local or `root://`, in this layout:
+To add the samples of a directory, local or `root://`, in this layout: the first
+command writes the group above, one sample per sub-directory, and the second makes a
+directory of data one sample.
 
 ```bash
-python -m {package}.scripts.add_samples -o signal_4mu_v10.yaml -t llpNanoAOD_v2 \\
-    -d root://cmseos.fnal.gov//store/group/lpcmetx/SIDM/ULSignalSamples/2018_v10/BsTo2DpTo4Mu/ \\
-    -c "4mu signal samples" --name-format "4Mu_{{MBs}}GeV_{{MDp}}GeV_{{ctau}}mm" --year 2018
+python -m {package}.scripts.add_samples -o signal.yaml -t nanoaod_v1 \\
+    -d root://cmseos.fnal.gov//store/user/<you>/signal/ \\
+    -c "ZPrime signal samples, one directory per mass point" --name-format "ZPrime_M{{M}}_W{{W}}"
+python -m {package}.scripts.add_samples -o data.yaml -t nanoaod_v1 -c "2018 data" \\
+    -d root://cmseos.fnal.gov//store/user/<you>/data/SingleMuon/ \\
+    --name SingleMuon_2018C --data --year 2018
 ```
 """
 
@@ -1056,9 +1060,9 @@ def study_objects(plan: Dict[str, Any]) -> List[str]:
 
 def render_study_notebook(package: str, title: str, plan: Dict[str, Any],
                           simulated: List[str], data: List[str]) -> str:
-    """A first study in the style of cms-sidm/SIDM's studies/obj_basics: process a file
-    of up to two simulated samples and one data sample and plot the basic histograms of
-    the leptons, the samples overlaid."""
+    """A first study, studies/obj_basics: process a file of up to two simulated samples
+    and one data sample and plot the basic histograms of the leptons, the samples
+    overlaid."""
     names = study_objects(plan)
     stems = [singular(name) for name in names]
     samples = simulated[:2] + data[:1]
@@ -1078,8 +1082,8 @@ overlaid. The object cuts are the ones `baseline` applies in `configs/selections
 the cell that builds the processor prints them.
 
 Rerun it after changing an object, a cut or a histogram: it is the quickest picture of
-what the change did. It follows the studies of cms-sidm/SIDM (`studies/obj_basics`):
-configure, run, then one `plot_row` per group of histograms.
+what the change did, and its layout is one to copy for a new study: configure, run,
+then one `plot_row` per group of histograms.
 """),
         _cell("code", f"""
 # python
@@ -1122,8 +1126,7 @@ plotting.set_plot_style()
         _cell("markdown", """
 ## Samples
 
-Every sample under `configs/samples/`, file by file and group by group, as in
-cms-sidm/SIDM's `configs/ntuples/`.
+Every sample under `configs/samples/`, config by config and group by group.
 """),
         _cell("code", """
 for config, tag, group in utilities.find_samples():

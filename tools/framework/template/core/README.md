@@ -8,10 +8,10 @@ the result is a set of cutflows and histograms per sample and per channel.
 
 > **Starting point, not an analysis.** The cuts in `analysis_pkg/definitions/cuts.py`
 > and the selections in `analysis_pkg/configs/selections.yaml` were generated so that
-> there is something to run. Their thresholds are placeholders (the baseline's are the
-> lepton-jet source cuts of [cms-sidm/SIDM](https://github.com/cms-sidm/SIDM): muons
-> above 5 GeV, electrons above 10 GeV, |eta| < 2.4): replace them with this analysis's
-> own before reading anything into a yield.
+> there is something to run. Their thresholds are placeholders (the baseline's are basic
+> starting cuts: muons above 5 GeV and electrons above 10 GeV with |eta| < 2.4, photons
+> above 20 GeV, jets above 30 GeV): replace them with this analysis's own before reading
+> anything into a yield.
 
 ## Getting started
 
@@ -206,33 +206,32 @@ object.
 ### Add a sample
 
 The samples are spread over files under `analysis_pkg/configs/samples/`, one per
-production as [cms-sidm/SIDM](https://github.com/cms-sidm/SIDM) keeps its ntuple configs;
-`configs/samples/README.md` there describes the layout. A list of named files goes into
-`samples.yaml` by hand; a directory of samples, local or `root://`, goes in with the
-script:
+production (`signal.yaml`, `data.yaml`, ...); `configs/samples/README.md` there
+describes the layout. A list of named files goes into `samples.yaml` by hand; a
+directory of samples, local or `root://`, goes in with the script:
 
 ```bash
-# one sample per sub-directory that holds ROOT files
-python -m analysis_pkg.scripts.add_samples -o signal_4mu_v10.yaml -t llpNanoAOD_v2 -c "4mu signal samples" \
-    -d root://cmseos.fnal.gov//store/group/lpcmetx/SIDM/ULSignalSamples/2018_v10/BsTo2DpTo4Mu/ \
-    --name-format "4Mu_{MBs}GeV_{MDp}GeV_{ctau}mm" --year 2018
+# one sample per sub-directory that holds ROOT files (ZPrime_M-500_W-5/nano/, ...)
+python -m analysis_pkg.scripts.add_samples -o signal.yaml -t nanoaod_v1 -c "ZPrime signal samples" \
+    -d root://cmseos.fnal.gov//store/user/<you>/signal/ \
+    --name-format "ZPrime_M{M}_W{W}" --year 2018
 # ... or the directory itself is one sample
-python -m analysis_pkg.scripts.add_samples -o data.yaml -t llpNanoAOD_v2 -c "2018 data" \
-    -d /path/to/DoubleMuon --name DoubleMuon_2018C --data --year 2018
+python -m analysis_pkg.scripts.add_samples -o data.yaml -t nanoaod_v1 -c "2018 data" \
+    -d /path/to/SingleMuon --name SingleMuon_2018C --data --year 2018
 ```
 
 Each sub-directory becomes a sample, with the directory its files are in as the
-sample's `path` (`<sample>/LLPnanoAODv2/`) and the bare file names under `files`; files
+sample's `path` (`ZPrime_M-500_W-5/nano/`) and the bare file names under `files`; files
 sitting directly in the directory make one sample named after it. `--name-format` names
-the samples from the `KEY-VALUE` pieces of their directory names (`{MBs}` from
-`MBs-500`, `{dir}` for the whole name); without it they are named after their
-directories, leaving out the part all of them share (`--keep-names` keeps it). The
-script points out a sample whose files are in more than one directory (two dates of
-one CRAB request, say), which can be the same events twice.
+the samples from the `KEY-VALUE` pieces of their directory names (`{M}` from `M-500`,
+so `ZPrime_M{M}_W{W}` gives `ZPrime_M500_W5`; `{dir}` for the whole name); without it
+they are named after their directories, leaving out the part all of them share
+(`--keep-names` keeps it). The script points out a sample whose files are in more than
+one directory (two dates of one CRAB request, say), which can be the same events twice.
 
 The group is added at the end of the file, which keeps everything else, comments
-included (comment out a file that cannot be read, as SIDM does); `--update` replaces an
-existing group. Every file under `configs/samples/` is searched for a sample: a name used
+included (comment out a file that cannot be read); `--update` replaces an existing
+group. Every file under `configs/samples/` is searched for a sample: a name used
 in two groups needs `tag=...` (`--tag`), and in two files under the same group name
 also `location_cfg=...` (`--location-cfg`).
 
@@ -246,9 +245,8 @@ Then:
 
 The events are read from the tree named `TREE_NAME` in `analysis_pkg/__init__.py`
 (currently `__TREE_NAME__`). A sample whose config names no `year` is in the run period
-`YEAR` of the same file (empty for none), the way cms-sidm/SIDM takes 2018 for its
-signal samples: the sample configs write a year for data, and for simulation only when
-it is another period.
+`YEAR` of the same file (empty for none): the sample configs write a year for data, and
+for simulation only when it is another period.
 
 ### Add a scale factor
 

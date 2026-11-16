@@ -249,8 +249,8 @@ def test_yaml_configs_parse():
     block = yaml.safe_load(render.render_sample_configs(samples, [])["samples.yaml"])["main"]
     assert block["samples"]["Sig-1"] == {"files": ["/a/b.root"], "skim_factor": 0.25, "year": "2018"}
     assert block["samples"]["Data"] == {"files": ["x.root", "y.root"], "is_data": True, "year": "2017"}
-    # in the project's run period (YEAR), simulation is written without a year, as in
-    # cms-sidm/SIDM's signal configs, and data states its year all the same
+    # in the project's run period (YEAR), simulation is written without a year, and
+    # data states its year all the same
     in_2018 = yaml.safe_load(render.render_sample_configs(samples, [], year="2018")["samples.yaml"])["main"]
     assert in_2018["samples"]["Sig-1"] == {"files": ["/a/b.root"], "skim_factor": 0.25}
     assert in_2018["samples"]["Data"] == {"files": ["x.root", "y.root"], "is_data": True, "year": "2017"}
@@ -335,8 +335,8 @@ def test_project_is_complete_and_has_no_placeholders():
         assert "muon mass" in notes and "polar set" in notes and "boostedTau" in notes
 
 
-def test_the_baseline_and_the_first_study_follow_sidm():
-    # the baseline object cuts are cms-sidm/SIDM's lepton sources, and the first study
+def test_the_baseline_and_the_first_study():
+    # the baseline object cuts are the placeholder starting cuts, and the first study
     # plots the basic histograms of the muons and electrons of the configured samples
     yaml = _yaml()
     with tempfile.TemporaryDirectory() as tmp:
@@ -377,7 +377,7 @@ def test_the_baseline_and_the_first_study_follow_sidm():
         compile(code.replace("%matplotlib inline", ""), "study", "exec")
 
 
-def test_sample_locations_become_groups_laid_out_like_sidm():
+def test_sample_locations_become_groups():
     yaml = _yaml()
     from tools.framework import _samples
     with tempfile.TemporaryDirectory() as tmp:
@@ -397,27 +397,27 @@ def test_sample_locations_become_groups_laid_out_like_sidm():
         result = _create(tmp, locations=locations, year="2018",
                          samples=[{"name": "Extra", "files": ["/e.root"]}])
         assert result["samples"] == ["Extra", "A_500GeV", "B_100GeV", "DoubleMuon"]
-        # a config per location, as cms-sidm/SIDM keeps one per production
+        # a config per location, one per production
         assert result["sample_configs"] == {"samples.yaml": {"main": 1}, "signal.yaml": {"signal": 2},
                                             "DoubleMuon.yaml": {"DoubleMuon": 1}}
         package = Path(tmp) / "demo_analysis" / result["package"]
         configs = {path.name: yaml.safe_load(path.read_text())
                    for path in (package / "configs/samples").glob("*.yaml")}
         assert sorted(configs) == ["DoubleMuon.yaml", "samples.yaml", "signal.yaml"]
-        # simulation of the project's run period names no year (it takes YEAR, as SIDM's
-        # signal samples take 2018); data states its year
+        # simulation of the project's run period names no year (it takes YEAR); data
+        # states its year
         assert 'YEAR = "2018"' in (package / "__init__.py").read_text()
         assert configs["samples.yaml"]["main"]["samples"] == {"Extra": {"files": ["/e.root"]}}
         config = configs["signal.yaml"]
         assert list(config) == ["signal"] and config["signal"]["path"] == str(data / "signal") + "/"
-        # the directory a sample's files are in is its path, as in cms-sidm/SIDM's configs
+        # the directory a sample's files are in is its path
         assert config["signal"]["samples"]["A_500GeV"] == {
             "files": ["part-0.root", "part-1.root"], "path": "A_500GeV/nano/"}
         assert configs["DoubleMuon.yaml"]["DoubleMuon"]["samples"] == {
             "DoubleMuon": {"files": ["out_1.root", "out_2.root"], "is_data": True, "year": "2018"}}
         text = (package / "configs/samples/signal.yaml").read_text()
         assert text.startswith(f"# 2 simulation sample(s) found below {data / 'signal'}/\nsignal:\n  path: ")
-        assert "      files:\n      - part-0.root\n" in text           # SIDM's plain layout
+        assert "      files:\n      - part-0.root\n" in text           # plain, unquoted
         assert (package / "configs/samples/README.md").is_file()
         notes = " ".join(result["notes"])
         assert "were registered as the group 'signal' of" in notes and "configs/samples/signal.yaml" in notes
@@ -443,7 +443,7 @@ def test_sample_locations_become_groups_laid_out_like_sidm():
             assert add_samples.formatted_names(names, "A_{MBs}GeV_{ctau}mm") == \
                 _samples.formatted_names(names, "A_{MBs}GeV_{ctau}mm")
             # the script adds a group at the end of a config and keeps what is there, its
-            # comments included (SIDM comments out files that cannot be read); --update
+            # comments included (a file that cannot be read can be commented out); --update
             # replaces the group in place
             cfg = Path(tmp) / "added.yaml"
             cfg.write_text("# my production\nolder:\n  path: /old/\n  samples:\n    Old:\n      files:\n"
@@ -496,7 +496,7 @@ def test_sample_locations_become_groups_laid_out_like_sidm():
             assert _samples.productions(grouped["DY"]["files"]) == [""]
             assert _samples.productions(grouped["TT"]["files"]) == ["260601_000001", "260711_012627"]
             assert _samples.productions(["2017/a.root", "2018/b.root"]) == ["2017", "2018"]
-            # names without what all of them share, cut at an underscore, as SIDM shortens them
+            # names without what all of them share, cut at an underscore
             sidm = ["CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3",
                     "CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-1000_MDp-1p2_ctau-0p02_v3"]
             # names that cannot be sample names are made into ones the same way
@@ -613,7 +613,7 @@ def test_sample_locations_become_groups_laid_out_like_sidm():
                                "    2Mu2E_100GeV_0p25GeV_0p02mm:\n      files:\n      - x_part-0.root\n"
                                "      path: CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-100_MDp-0p25_ctau-0p02_v3/"
                                "LLPnanoAODv2/\n    2Mu2E_100GeV_0p25GeV_10p0mm:\n"), text
-        assert "year:" not in text       # 2018 is the project's YEAR: SIDM's signal configs name none
+        assert "year:" not in text       # 2018 is the project's YEAR: simulation in it names none
         assert "named by name_format" in " ".join(result["notes"])
         for location, expected in (({"name_format": "2Mu2E_{MBs}GeV_{mass}"}, "has no mass"),
                                    ({"name_format": "2Mu2E_{MDp}GeV"}, "names both"),

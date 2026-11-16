@@ -32,7 +32,7 @@ LOCATION_KEYS = ("directory", "files", "name", "tag", "config", "comment", "name
 LOCATION_SHAPE = ("Each location is {'directory': a directory or root://host//path/, 'is_data': "
                   "false, 'year': ..., and optionally 'config': the file under configs/samples/ "
                   "to write it to, 'tag': the name of its group, 'comment': the line above it, "
-                  "'name_format': e.g. '2Mu2E_{MBs}GeV_{MDp}GeV_{ctau}mm', or 'name': one "
+                  "'name_format': e.g. 'ZPrime_M{M}_W{W}', or 'name': one "
                   "sample for the whole directory}.")
 _CONFIG_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]*\.ya?ml")
 # a README with more lines than this is somebody's text: it is kept, and the framework's
@@ -181,9 +181,9 @@ def normalise_locations(locations: Optional[List[Dict[str, Any]]], year: Optiona
 
     Each location carries the ``files`` found below its ``directory`` (relative paths,
     as samples_lib.list_files returns them) and becomes one group, written to a config
-    file of its own under configs/samples/ as cms-sidm/SIDM keeps one ntuple config per
-    production. ``taken`` holds the sample names already used; the names of the new
-    samples are added to it. ``reserved`` are group names of samples.yaml that are taken.
+    file of its own under configs/samples/, one per production. ``taken`` holds the
+    sample names already used; the names of the new samples are added to it.
+    ``reserved`` are group names of samples.yaml that are taken.
     """
     if locations is not None and not isinstance(locations, (list, tuple)):
         raise ScaffoldError("sample_locations must be a list", LOCATION_SHAPE)
@@ -217,7 +217,7 @@ def normalise_locations(locations: Optional[List[Dict[str, Any]]], year: Optiona
         if name_format is not None:
             if not isinstance(name_format, str) or render.text_problem(name_format):
                 raise ScaffoldError(f"location {directory}: name_format must be text such as "
-                                    "'2Mu2E_{MBs}GeV_{MDp}GeV_{ctau}mm'")
+                                    "'ZPrime_M{M}_W{W}'")
             if name is not None:
                 raise ScaffoldError(f"location {directory}: give 'name' (the directory is one "
                                     "sample) or 'name_format' (one sample per sub-directory), "
@@ -255,7 +255,7 @@ def normalise_locations(locations: Optional[List[Dict[str, Any]]], year: Optiona
             if not _CONFIG_NAME.fullmatch(config):
                 raise ScaffoldError(f"location {directory}: config {config!r} must be the name of "
                                     "a .yaml file under configs/samples/, such as "
-                                    "'signal_2mu2e_v10.yaml' (no directories)")
+                                    "'signal.yaml' (no directories)")
         else:
             config, number = f"{stem}.yaml", 2
             while config in default_configs or config == "samples.yaml":

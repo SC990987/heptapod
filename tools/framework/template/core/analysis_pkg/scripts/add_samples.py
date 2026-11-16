@@ -1,25 +1,24 @@
 """Add the samples of a directory to a location config under configs/samples/.
 
-    python -m analysis_pkg.scripts.add_samples -o signal_4mu_v10.yaml -t llpNanoAOD_v2 \\
-        -d root://cmseos.fnal.gov//store/group/lpcmetx/SIDM/ULSignalSamples/2018_v10/BsTo2DpTo4Mu/ \\
-        -c "4mu signal samples" --name-format "4Mu_{MBs}GeV_{MDp}GeV_{ctau}mm" --year 2018
-    python -m analysis_pkg.scripts.add_samples -o data.yaml -t llpNanoAOD_v2 -c "2018 data" \\
-        -d root://cmseos.fnal.gov//store/group/lpcmetx/SIDM/Data/2018data/NanoAOD/DoubleMuon/ \\
-        --name DoubleMuon_2018C --data --year 2018
+    python -m analysis_pkg.scripts.add_samples -o signal.yaml -t nanoaod_v1 \\
+        -d root://cmseos.fnal.gov//store/user/<you>/signal/ \\
+        -c "ZPrime signal samples" --name-format "ZPrime_M{M}_W{W}" --year 2018
+    python -m analysis_pkg.scripts.add_samples -o data.yaml -t nanoaod_v1 -c "2018 data" \\
+        -d root://cmseos.fnal.gov//store/user/<you>/data/SingleMuon/ \\
+        --name SingleMuon_2018C --data --year 2018
 
-The group is written as cms-sidm/SIDM's add_ntuples.py writes its ntuple configs: the
-comment (-c) on the line above it, the group (-t) with the directory as its path, and
-one sample per sub-directory holding ROOT files, with the directory its files are in as
-the sample's path (``<sample>/LLPnanoAODv2/``) and the bare file names under ``files``.
-Files that sit directly in DIRECTORY make one sample named after it; with --name,
-DIRECTORY itself is one sample.
+The group is written with the comment (-c) on the line above it, the group (-t) with
+the directory as its path, and one sample per sub-directory holding ROOT files, with
+the directory its files are in as the sample's path (``ZPrime_M-500_W-5/nano/``) and
+the bare file names under ``files``. Files that sit directly in DIRECTORY make one
+sample named after it; with --name, DIRECTORY itself is one sample.
 
 Samples are named after their sub-directories, leaving out the part all of them share
-(``..._MBs-500_MDp-0p25_ctau-0p4_v3`` among its siblings is ``MBs-500_MDp-0p25_ctau-0p4``;
+(``ZPrime_M-500_W-5_TuneCP5_13TeV-madgraph`` among its siblings is ``M-500_W-5``;
 --keep-names keeps the whole names), or by --name-format: a format whose fields are the
-KEY-VALUE pieces of the directory names, so that "2Mu2E_{MBs}GeV_{MDp}GeV_{ctau}mm" names
-``..._MBs-500_MDp-0p25_ctau-0p4_v3`` 2Mu2E_500GeV_0p25GeV_0p4mm, as SIDM names its signal
-points. ``{dir}`` is the whole directory name and ``{short}`` the shortened one.
+KEY-VALUE pieces of the directory names, so that "ZPrime_M{M}_W{W}" turns
+``ZPrime_M-500_W-5`` into ZPrime_M500_W5. ``{dir}`` is the whole directory name and
+``{short}`` the shortened one.
 
 Local directories are walked directly. ``root://`` directories are listed with the
 ``xrdfs`` command, which therefore has to be available (and a valid grid proxy, where
@@ -30,9 +29,8 @@ included. An existing group is replaced only with --update; the rest of the file
 as it is. A sample name may be used in one group only, unless every use of it names its
 group (tag=...) and, when two files use the same group name, its file (location_cfg=...).
 
-A sample's year is written as SIDM writes it: always for data, and for simulation only
-when it is not the project's YEAR (analysis_pkg/__init__.py), which a sample without one
-takes, as SIDM's signal samples take 2018.
+A sample's year is written always for data, and for simulation only when it is not the
+project's YEAR (analysis_pkg/__init__.py), which a sample without one takes.
 
 Afterwards: give each simulated sample its cross section in configs/cross_sections.yaml
 and make sure the run period (--year, or YEAR) exists in configs/run_periods.yaml.
@@ -151,9 +149,8 @@ def valid_name(text):
 
 def shortened_names(names):
     """Each name without what all of them share at the start and at the end, cut at an
-    underscore: among its siblings ``CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3``
-    becomes ``MBs-500_MDp-0p25_ctau-0p4``. Unchanged when that would leave a name empty
-    or make two the same."""
+    underscore: among its siblings ``ZPrime_M-500_W-5_TuneCP5_13TeV-madgraph`` becomes
+    ``M-500_W-5``. Unchanged when that would leave a name empty or make two the same."""
     names = list(names)
     unchanged = {name: name for name in names}
     if len(names) < 2:
@@ -174,7 +171,7 @@ _FIELD = re.compile(r"[A-Za-z][A-Za-z0-9]*")
 
 def name_fields(name):
     """What --name-format can take from a directory name: every ``KEY-VALUE`` piece
-    between underscores (``MBs-500`` gives MBs=500), and ``dir``, the whole name."""
+    between underscores (``M-500`` gives M=500), and ``dir``, the whole name."""
     fields = {"dir": name}
     for piece in name.split("_"):
         key, sep, value = piece.partition("-")
@@ -217,7 +214,7 @@ def formatted_names(names, text, short=None):
 
 def natural_key(name):
     """A sort key that puts the numbers in a name in order, ``p`` read as the decimal
-    point (0p02 < 0p2 < 2p0 < 10p0), as SIDM lists its mass points."""
+    point (0p02 < 0p2 < 2p0 < 10p0), so that mass points are listed in order."""
     parts = re.split(r"(\d+(?:p\d+)?)", name)
     return [(float(part.replace("p", ".")), part) if index % 2 else (part.lower(), part)
             for index, part in enumerate(parts)]
@@ -259,8 +256,8 @@ def number_text(value):
 
 
 def render_group(tag, path, samples, comment=None, year=None):
-    """One group, as SIDM's ntuple configs hold it: the comment, the tag, its path, and
-    per sample its files, then is_data, path, skim_factor and year."""
+    """One group of a sample config: the comment, the tag, its path, and per sample its
+    files, then is_data, path, skim_factor and year."""
     out = [f"# {comment}"] if comment else []
     out += [f"{yaml_text(tag)}:", f"  path: {yaml_text(path or '')}"]
     if year:
@@ -338,13 +335,13 @@ def _names_elsewhere(cfg_path):
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="python -m analysis_pkg.scripts.add_samples",
-        description="Register the ROOT files below a directory as samples, laid out as "
-                    "cms-sidm/SIDM's ntuple configs.")
+        description="Register the ROOT files below a directory as samples: one group in a "
+                    "config under configs/samples/, one sample per sub-directory.")
     parser.add_argument("-o", "--output-cfg", required=True,
                         help="config under configs/samples/ (or an absolute path), e.g. "
-                             "signal_2mu2e_v10.yaml")
+                             "signal.yaml")
     parser.add_argument("-t", "--tag", required=True,
-                        help="name of this group of samples, e.g. llpNanoAOD_v2")
+                        help="name of this group of samples, e.g. nanoaod_v1")
     parser.add_argument("-d", "--directory", required=True,
                         help="local directory or root://host//path holding the files")
     parser.add_argument("-c", "--comment",
@@ -352,7 +349,7 @@ def main(argv=None):
     parser.add_argument("--name", help="treat the directory as a single sample with this name")
     parser.add_argument("--name-format",
                         help="name the samples from the KEY-VALUE pieces of their directory "
-                             "names, e.g. '2Mu2E_{MBs}GeV_{MDp}GeV_{ctau}mm'")
+                             "names, e.g. 'ZPrime_M{M}_W{W}'")
     parser.add_argument("--rename", action="append", default=[], metavar="OLD=NEW",
                         help="rename a sample (repeatable)")
     parser.add_argument("--keep-names", action="store_true",

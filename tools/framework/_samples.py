@@ -6,14 +6,14 @@
 
 Samples from where their files live: a local directory or a root:// directory.
 
-A location becomes one group of the sample config, laid out as cms-sidm/SIDM lays out
-its ntuple configs: the directory as the group's ``path``, one sample per
-sub-directory holding ROOT files, with the directory its files are in as the sample's
-``path`` (``<sample>/LLPnanoAODv2/``, ``<dataset>/<request>/<date>/0000/``), and the
-file names under that. Samples are named after their directories, without the part all
-of them share (``shortened_names``). The listing and the grouping are the ones the generated
-framework's ``scripts/add_samples.py`` uses, so that a group the scaffold writes looks
-like one the analyst adds with that script later.
+A location becomes one group of the sample config: the directory as the group's
+``path``, one sample per sub-directory holding ROOT files, with the directory its files
+are in as the sample's ``path`` (``<sample>/nano/``,
+``<dataset>/<request>/<date>/0000/``), and the file names under that. Samples are named
+after their directories, without the part all of them share (``shortened_names``). The
+listing and the grouping are the ones the generated framework's
+``scripts/add_samples.py`` uses, so that a group the scaffold writes looks like one the
+analyst adds with that script later.
 
 ``list_files`` does the I/O (``os.walk``, or the ``xrdfs`` command for root://);
 everything else is pure.
@@ -101,8 +101,7 @@ def list_files(directory: str, timeout: int = LIST_TIMEOUT) -> List[str]:
 
 def _lifted(prefix: str, files: List[str]) -> Dict[str, object]:
     """``{"path", "files"}`` with the directories all the files share moved into the
-    path, as cms-sidm/SIDM writes a sample: ``path: <sample>/LLPnanoAODv2/`` and the
-    bare file names under it."""
+    path: ``path: <sample>/nano/`` and the bare file names under it."""
     parts = [path.split("/")[:-1] for path in files]
     shared: List[str] = []
     for level in zip(*parts) if parts else ():
@@ -144,10 +143,10 @@ def group_by_sample(files: List[str], single_name: Optional[str] = None,
 
 def shortened_names(names: List[str]) -> Dict[str, str]:
     """Each name without what all of them share at the start and at the end, cut at an
-    underscore, the way cms-sidm/SIDM shortens its sample names for tables and legends:
-    among its siblings, ``CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3``
-    becomes ``MBs-500_MDp-0p25_ctau-0p4``. With fewer than two names, or when a name
-    would be left empty or two would become the same, every name stays as it is."""
+    underscore, short enough for tables and legends: among its siblings,
+    ``ZPrime_M-500_W-5_TuneCP5_13TeV-madgraph`` becomes ``M-500_W-5``. With fewer than
+    two names, or when a name would be left empty or two would become the same, every
+    name stays as it is."""
     names = list(names)
     unchanged = {name: name for name in names}
     if len(names) < 2:
@@ -168,7 +167,7 @@ _FIELD = re.compile(r"[A-Za-z][A-Za-z0-9]*")
 
 def name_fields(name: str) -> Dict[str, str]:
     """What a name format can take from a directory name: every ``KEY-VALUE`` piece
-    between underscores (``MBs-500`` gives MBs=500, ``ctau-0p4`` gives ctau=0p4), and
+    between underscores (``M-500`` gives M=500, ``ctau-0p4`` gives ctau=0p4), and
     ``dir``, the whole name."""
     fields = {"dir": name}
     for piece in name.split("_"):
@@ -200,15 +199,14 @@ def format_fields(text: str) -> List[str]:
 
 def formatted_names(names: List[str], text: str,
                     short: Optional[Dict[str, str]] = None) -> Dict[str, str]:
-    """``{directory name: sample name}`` from a format such as
-    ``2Mu2E_{MBs}GeV_{MDp}GeV_{ctau}mm``, which names cms-sidm/SIDM's signal points
-    (``..._MBs-500_MDp-0p25_ctau-0p4_v3`` becomes ``2Mu2E_500GeV_0p25GeV_0p4mm``).
+    """``{directory name: sample name}`` from a format such as ``ZPrime_M{M}_W{W}``
+    (``ZPrime_M-500_W-5`` becomes ``ZPrime_M500_W5``).
     ``short`` adds the field ``short``: the name without what all the names share."""
     try:
         used = format_fields(text)
     except ValueError as exc:
         raise LocationError(str(exc), "For example {'name_format': "
-                                      "'2Mu2E_{MBs}GeV_{MDp}GeV_{ctau}mm'}") from None
+                                      "'ZPrime_M{M}_W{W}'}") from None
     named: Dict[str, str] = {}
     for name in names:
         fields = name_fields(name)
@@ -232,8 +230,8 @@ def formatted_names(names: List[str], text: str,
 
 def natural_key(name: str) -> List[Tuple[Any, ...]]:
     """A sort key that puts the numbers in a name in order, ``p`` read as the decimal
-    point (0p02 < 0p2 < 2p0 < 10p0, MBs-150 < MBs-1000), as cms-sidm/SIDM lists its
-    mass points."""
+    point (0p02 < 0p2 < 2p0 < 10p0, M-150 < M-1000), so that mass points are listed in
+    order."""
     parts = re.split(r"(\d+(?:p\d+)?)", name)
     return [(float(part.replace("p", ".")), part) if index % 2 else (part.lower(), part)
             for index, part in enumerate(parts)]
