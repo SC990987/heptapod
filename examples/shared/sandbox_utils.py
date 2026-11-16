@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 
-def create_new_sandbox(demo_files_dir: Path, mode: str = "todo") -> str:
+def create_new_sandbox(demo_files_dir: Path, mode: str = "todo", target=None) -> str:
     """
     Create a new sandbox directory with the next available number.
     Copies appropriate template files based on the mode.
@@ -24,10 +24,19 @@ def create_new_sandbox(demo_files_dir: Path, mode: str = "todo") -> str:
               - "todo": template files AND todos.md
               - "plan": template files only (agent makes its own plan)
               - "explorer": template files only
+        target: a directory of the caller's choosing, used instead of the next
+            numbered one and created if missing. A directory that already holds
+            files is refused (a new git repository, holding nothing but .git,
+            counts as empty), unless it was set up as a sandbox before (it has a
+            .toolbase/ directory): then it is used as it is, and the template
+            files are not copied over its files again.
 
     Returns:
         Absolute path to the new sandbox. The system prompt is the caller's
         business: each example keeps its own under <example>/prompts/.
+
+    Raises:
+        ValueError: for an unknown mode, or a target that cannot be used.
     """
     # Mode configuration
     MODE_CONFIG = {
@@ -42,26 +51,44 @@ def create_new_sandbox(demo_files_dir: Path, mode: str = "todo") -> str:
 
     config = MODE_CONFIG[mode]
 
-    # Ensure the workspace dir exists. On a fresh checkout it may not be,
-    # in which case iterdir() would otherwise raise FileNotFoundError.
-    demo_files_dir.mkdir(parents=True, exist_ok=True)
+    if target is not None:
+        # A directory the caller chose. Never write the sandbox's files over
+        # someone's own: only an empty directory, or one set up before, is used.
+        new_sandbox_path = Path(target).expanduser().resolve()
+        new_sandbox_name = str(new_sandbox_path)
+        if new_sandbox_path.exists() and not new_sandbox_path.is_dir():
+            raise ValueError(f"{new_sandbox_path} exists and is not a directory")
+        held = {item.name for item in new_sandbox_path.iterdir()} if new_sandbox_path.is_dir() else set()
+        if held - {'.git'}:
+            if not (new_sandbox_path / '.toolbase').is_dir():
+                raise ValueError(f"{new_sandbox_path} already holds files and was not set up "
+                                 "as a sandbox before: choose a new or an empty directory (a new "
+                                 "git repository, holding nothing but .git, will do)")
+            print(f"Using the sandbox set up before in {new_sandbox_path} ({config['description']})")
+            return str(new_sandbox_path)
+        new_sandbox_path.mkdir(parents=True, exist_ok=True)
+        print(f"Created sandbox: {new_sandbox_path} ({config['description']})")
+    else:
+        # Ensure the workspace dir exists. On a fresh checkout it may not be,
+        # in which case iterdir() would otherwise raise FileNotFoundError.
+        demo_files_dir.mkdir(parents=True, exist_ok=True)
 
-    # Find existing sandbox directories
-    existing_sandboxes = []
-    for item in demo_files_dir.iterdir():
-        if item.is_dir() and item.name.startswith('sandbox'):
-            match = re.match(r'sandbox(\d+)', item.name)
-            if match:
-                existing_sandboxes.append(int(match.group(1)))
+        # Find existing sandbox directories
+        existing_sandboxes = []
+        for item in demo_files_dir.iterdir():
+            if item.is_dir() and item.name.startswith('sandbox'):
+                match = re.match(r'sandbox(\d+)', item.name)
+                if match:
+                    existing_sandboxes.append(int(match.group(1)))
 
-    # Determine next sandbox number
-    next_num = max(existing_sandboxes) + 1 if existing_sandboxes else 1
-    new_sandbox_name = f'sandbox{next_num:03d}'
-    new_sandbox_path = demo_files_dir / new_sandbox_name
+        # Determine next sandbox number
+        next_num = max(existing_sandboxes) + 1 if existing_sandboxes else 1
+        new_sandbox_name = f'sandbox{next_num:03d}'
+        new_sandbox_path = demo_files_dir / new_sandbox_name
 
-    # Create new sandbox directory
-    new_sandbox_path.mkdir(exist_ok=True)
-    print(f"Created new sandbox: {new_sandbox_name} ({config['description']})")
+        # Create new sandbox directory
+        new_sandbox_path.mkdir(exist_ok=True)
+        print(f"Created new sandbox: {new_sandbox_name} ({config['description']})")
 
     # Copy template files (excluding .DS_Store files)
     template_dir = demo_files_dir / 'template'

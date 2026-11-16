@@ -180,6 +180,34 @@ def _set_call_timeout(harness: str, sandbox: Path, seconds: int) -> None:
     print(f'  tool calls may run for up to {seconds} s (toolbase serve --call-timeout)')
 
 
+def _keep_out_of_git(sandbox: Path, before: set) -> None:
+    """Keep the sandbox's own files out of git when the sandbox is a repository's top.
+
+    A sandbox set up in a git repository (`--dir` on a new one, to build an analysis
+    in) gets the agent's instructions and the MCP wiring at its top. They are the
+    launcher's, not the analysis's: list them in the repository's own exclude file,
+    which is never committed, so that `git status` stays about the analysis.
+    """
+    git_dir = sandbox / '.git'
+    if not git_dir.is_dir():         # no repository here, or a worktree's .git file
+        return
+    added = sorted(set(os.listdir(sandbox)) - before - {'.git'})
+    exclude = git_dir / 'info' / 'exclude'
+    try:
+        text = exclude.read_text() if exclude.exists() else ''
+        wanted = [f'/{name}' for name in added if f'/{name}' not in text.splitlines()]
+        if not wanted:
+            return
+        exclude.parent.mkdir(exist_ok=True)
+        lead = '\n' if text and not text.endswith('\n') else ''
+        exclude.write_text(text + lead + '# the sandbox the HEPTAPOD launcher set up\n'
+                           + '\n'.join(wanted) + '\n')
+    except OSError as exc:
+        print(f"  NOTE: could not keep the sandbox's files out of git ({exc})")
+        return
+    print(f"  kept the sandbox's own files out of git ({', '.join(wanted)}, in .git/info/exclude)")
+
+
 def _toolkit_python():
     """The interpreter of the installed heptapod toolkit, or None if not found.
 
@@ -276,13 +304,23 @@ def main(*, example, bundles, prompt_path, sandbox_dir, mode='explorer',
                     help='sandbox mode (default: %(default)s)')
     ap.add_argument('--no-launch', action='store_true',
                     help='set the sandbox up but do not start the agent')
+    ap.add_argument('--dir', metavar='DIR',
+                    help='set the sandbox up in DIR, created if missing, instead of a new '
+                         'numbered one beside the example: the agent works there, and '
+                         'everything the tools make goes inside it. A directory set up this '
+                         'way before can be given again; one holding other files is refused')
     args = ap.parse_args()
 
     harness = HARNESSES[args.harness]
     tb = _toolbase()
 
     from sandbox_utils import create_new_sandbox
-    sandbox = Path(create_new_sandbox(Path(sandbox_dir), mode=args.mode)).resolve()
+    try:
+        sandbox = Path(create_new_sandbox(Path(sandbox_dir), mode=args.mode,
+                                          target=args.dir)).resolve()
+    except ValueError as exc:
+        sys.exit(f'  {exc}')
+    before = set(os.listdir(sandbox))
 
     prompt = prompt_path[args.mode] if isinstance(prompt_path, dict) else prompt_path
     (sandbox / harness['instructions']).write_text(Path(prompt).read_text())
@@ -329,6 +367,7 @@ def main(*, example, bundles, prompt_path, sandbox_dir, mode='explorer',
         _codex_startup_timeout(sandbox, int(mcp_startup_timeout))
     if call_timeout:
         _set_call_timeout(args.harness, sandbox, int(call_timeout))
+    _keep_out_of_git(sandbox, before)
     if warm_imports:
         _warm_imports(list(warm_imports), list(warm_pythons))
 

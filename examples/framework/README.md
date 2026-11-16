@@ -230,7 +230,9 @@ The launcher creates a numbered sandbox under `examples/framework/`, writes the
 system prompt as the file your harness reads, activates the `framework` and
 `coffea` bundles, links `ANALYSIS_DATA` into the sandbox as `data/`, wires the
 MCP server and starts the agent. Pass `--no-launch` to set the sandbox up and
-stop.
+stop, and `--dir DIR` to set it up in a directory of your choosing instead: a new
+one, or a new git repository, where the agent builds the framework at the top
+(`repo="."`) and commits it, with the sandbox's own files kept out of git.
 
 Two things it does differently from the other examples, because these tools run
 an analysis rather than a quick calculation:
