@@ -46,7 +46,8 @@ class ScaffoldAnalysisFrameworkTool(BaseTool):
     it. Without `sample_file`, standard NanoAOD is assumed.
 
     Where it goes: `repo`, the analyst's git repository (a url, which is cloned into
-    the working directory, or a clone already there), or else a new `project_dir`.
+    the working directory, or a clone already there; "." when the working directory is
+    that clone), or else a new `project_dir`.
     In a repository the framework is committed, in one commit on the current branch,
     with nothing else that was staged; it is never pushed: the answer gives the
     command for that. A file of the repository's that the framework would replace is
@@ -169,7 +170,8 @@ class ScaffoldAnalysisFrameworkTool(BaseTool):
     repo: Optional[str] = RuntimeField(
         default=None,
         description="Git repository to build the framework in: a url to clone, or a clone "
-                    "inside the working directory. Committed there, never pushed")
+                    "inside the working directory ('.' when the working directory is the "
+                    "clone). Committed there, never pushed")
     package_name: Optional[str] = RuntimeField(
         default=None, description="Python package name (default: derived from project_dir)")
     project_title: Optional[str] = RuntimeField(
@@ -474,9 +476,12 @@ class ScaffoldAnalysisFrameworkTool(BaseTool):
         relative, clone_url, error = self._where(base)
         if error:
             return error
-        # the framework is written there: where the path really leads must be inside too
+        # the framework is written there: where the path really leads must be inside too.
+        # The working directory itself only as the clone named to build in (repo="."):
+        # an agent working in the analysis's own repository
         project = projects.safe_path(base, relative, follow_links=True)
-        if project is None or project == base:
+        own_clone = project == base and bool(self.repo) and clone_url is None
+        if project is None or (project == base and not own_clone):
             return self.format_error(
                 error="Access Denied",
                 reason="the framework must go into a directory inside the working directory "

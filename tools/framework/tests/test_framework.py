@@ -686,6 +686,45 @@ def test_the_tool_lists_sample_locations():
         assert not Path(tmp, "s").exists()
 
 
+def test_the_working_directory_is_built_in_when_it_is_the_repository_named():
+    scaffold_tool = _tools()[0]
+    import shutil
+    import subprocess
+    if shutil.which("git") is None:
+        _skip("git is not installed")
+    identity = {"GIT_AUTHOR_NAME": "Analyst", "GIT_AUTHOR_EMAIL": "analyst@example.org",
+                "GIT_COMMITTER_NAME": "Analyst", "GIT_COMMITTER_EMAIL": "analyst@example.org"}
+    saved = {key: os.environ.get(key) for key in identity}
+    os.environ.update(identity)
+
+    def git(*args, cwd):
+        return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            work = os.path.realpath(tmp)
+            git("init", "-q", cwd=work)
+            Path(work, "CLAUDE.md").write_text("the agent's instructions\n")     # the sandbox's own
+            out = json.loads(scaffold_tool(base_directory=work, repo=".",
+                                           package_name="dimuon_analysis")._run())
+            assert out["status"] == "ok", out
+            assert Path(work, "setup.py").is_file() and Path(work, "dimuon_analysis").is_dir()
+            committed = git("show", "--name-only", "--format=", "HEAD", cwd=work).split()
+            assert "setup.py" in committed and "CLAUDE.md" not in committed, committed
+            assert Path(work, "CLAUDE.md").read_text() == "the agent's instructions\n"
+            # the working directory itself only as the repository: not as a project_dir
+            assert "Access Denied" in scaffold_tool(base_directory=work, project_dir=".")._run()
+        with tempfile.TemporaryDirectory() as tmp:
+            # a working directory that is no repository is refused as one
+            assert "Not A Repository" in scaffold_tool(base_directory=tmp, repo=".")._run()
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 def test_the_framework_is_built_and_committed_in_a_git_repository():
     scaffold_tool = _tools()[0]
     import shutil

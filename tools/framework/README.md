@@ -38,8 +38,10 @@ The generated project does not import HEPTAPOD. It is the user's code from then 
 **A git repository** (`repo`). A url (`https://`, `ssh://`, `git@host:owner/name.git`,
 or `file://` inside the working directory) is cloned into the working directory,
 under `project_dir` or the repository's name; a clone already there is used if it is
-the top of a work tree, a clone of that url, and not an interrupted clone. The
-framework is written at the top of the clone, which may already hold files: a
+the top of a work tree, a clone of that url, and not an interrupted clone. When the
+working directory is itself the top of the analysis's repository (an agent started
+in it with `launch.py --dir`), `repo="."` builds there; `project_dir="."` stays
+refused. The framework is written at the top of the clone, which may already hold files: a
 `.gitignore` there gets the framework's entries appended, a `README.md` of more than
 three non-empty lines is kept and the framework's README is written as
 `FRAMEWORK.md`, a shorter one is replaced. Any other file the framework would replace

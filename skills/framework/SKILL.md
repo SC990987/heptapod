@@ -66,7 +66,8 @@ show the user the error in full instead of working around it in the definitions.
    `objects` the analysis needs beyond the standard ones, `triggers`, and `year`,
    `lumi` and `golden_json` if you were given them (`lumi` and `golden_json` are only
    accepted together with `year`). Where it goes: `repo` when the user names a git
-   repository (its url, which the tool clones, or a clone in the working directory),
+   repository (its url, which the tool clones, or a clone in the working directory;
+   `repo="."` when the working directory is the repository the user wants it in),
    else a new `project_dir`. Where the events are: `sample_locations`, one entry per
    directory the user named, `{"directory": ..., "is_data": ..., "year": ...}`, local
    or `root://`; every sub-directory holding ROOT files becomes a sample (give `name`
