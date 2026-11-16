@@ -44,7 +44,14 @@ Then, in a shell where `cmsenv` was never run, from the repository root:
 python examples/mcgen/launch.py --harness claude-code    # or --harness codex, --harness opencode
 ```
 
-and ask, for example with one of the prompts in [`task_prompt.md`](task_prompt.md).
+and ask, for example with one of the prompts in [`task_prompt.md`](task_prompt.md); the
+first one is a complete request that runs here in about an hour. For the agent to run
+a framework's notebooks, and for you to open them with the toolkit's python, add
+Jupyter to the toolkit's environment (`$PY` as in `examples/framework/README.md`):
+
+```bash
+$PY -m pip install nbconvert ipykernel
+```
 
 What it needs at the LPC:
 

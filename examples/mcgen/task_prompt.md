@@ -1,8 +1,33 @@
 # CMS simulation task prompts
 
-Prompts to start a session from. Replace the physics, the run periods, the numbers of
-events and the paths with your own: they are illustrations. The agent does not invent
-masses, cuts or filter thresholds; whatever you leave out it asks for.
+Prompts to start a session from. The first is complete as it stands; in the others,
+replace the physics, the run periods, the numbers of events and the paths with your
+own: they are illustrations. The agent does not invent masses, cuts or filter
+thresholds; whatever you leave out it asks for.
+
+---
+
+## A first run, here: 100 J/psi -> mu mu events and a framework
+
+This one is complete as it stands. It was run at the LPC end to end, with the tools
+called as an agent calls them (`tools/mcgen/README.md`, "Verification"): 47 minutes,
+all of it on the interactive node, with no pileup and no grid proxy needed.
+
+```
+Produce 100 events of prompt J/psi -> mu+ mu- for the 2023 run period (not 2023BPix),
+as NanoAOD, without pileup, here on this machine, with the files in the sandbox.
+Generate them with Pythia 8 (Charmonium:all = on, the J/psi decaying only to mu+ mu-,
+PhaseSpace:pTHatMin = 8), and keep only events with two opposite-sign muons of
+pT > 5 GeV and |eta| < 2.4, with a generator filter; the 100 events are after the
+filter. Measure the filter efficiency first with a generator-only test, test the whole
+chain on one job, then produce. When the NanoAOD is there, build an analysis framework
+on it in a new directory jpsi_analysis, check it, and run its first study notebook, so
+that I can see the dimuon invariant mass and the J/psi peak.
+```
+
+The filter's cuts are those of the framework's starting muon selection, so nearly
+every event produced reaches the dimuon-mass plot. Running the notebook needs Jupyter
+in the toolkit's environment (see `README.md`).
 
 ---
 
