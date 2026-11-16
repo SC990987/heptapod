@@ -31,27 +31,46 @@ sample and its cross section configured.
 
 ## Using it
 
-Set up the branch and the toolkit as in `examples/framework/README.md` ("Using this
-branch"), installing the `mcgen` bundle as well:
+The tools are on the `mcgen` branch of the fork
+[SC990987/heptapod](https://github.com/SC990987/heptapod), which holds everything of
+the `thrust2` branch as well (the framework tools among it). On the LPC, work in
+`~/nobackup`, in a shell where `cmsenv` was never run, with Python 3.12 and toolbase's
+venv set up as in [`examples/framework/README.md`](../framework/README.md) ("On the
+LPC"). Get the branch, into a clone of heptapod:
 
 ```bash
-tb install . --bundle mcgen --bundle framework --bundle coffea
+git remote add sc https://github.com/SC990987/heptapod.git
+git fetch sc
+git switch -c mcgen --track sc/mcgen
 ```
 
-Then, in a shell where `cmsenv` was never run, from the repository root:
+or as a new clone:
+
+```bash
+git clone -b mcgen https://github.com/SC990987/heptapod.git
+cd heptapod
+```
+
+Then install, from the repository root: the three bundles, and into the toolkit's
+environment an XRootD client (to read samples on EOS) and Jupyter (to run the
+framework's notebooks):
+
+```bash
+pip install toolbase
+tb install . --bundle mcgen --bundle framework --bundle coffea
+PY=$(grep -h '^python_path:' ~/.toolbase/cache/heptapod/*/.install_meta.yaml | head -1 | awk '{print $2}')
+$PY -m pip install fsspec-xrootd xrootd nbconvert ipykernel
+```
+
+Then, from the repository root, with Claude Code (or Codex, or opencode) installed:
 
 ```bash
 python examples/mcgen/launch.py --harness claude-code    # or --harness codex, --harness opencode
 ```
 
-and ask, for example with one of the prompts in [`task_prompt.md`](task_prompt.md); the
-first one is a complete request that runs here in about an hour. For the agent to run
-a framework's notebooks, and for you to open them with the toolkit's python, add
-Jupyter to the toolkit's environment (`$PY` as in `examples/framework/README.md`):
-
-```bash
-$PY -m pip install nbconvert ipykernel
-```
+and ask, for example with one of the prompts in [`task_prompt.md`](task_prompt.md): the
+first is a complete request that runs here in under an hour, the second the same on
+HTCondor with the NanoAOD on EOS.
 
 Each launch sets up a new sandbox beside the launcher (`examples/mcgen/sandbox001`,
 ...), and what the agent makes goes inside it: the tools write only inside the
@@ -77,6 +96,8 @@ What it needs at the LPC:
   `voms-proxy-init -voms cms -valid 192:00`. The agent never makes one.
 - For outputs on EOS, a directory of yours there:
   `root://cmseos.fnal.gov//store/user/<you>/...`. Batch jobs write only there.
+- To read files on EOS from the node (a framework on a sample there), a Kerberos
+  ticket: `klist` shows it, `kinit $USER@FNAL.GOV` gets one.
 
 The agent confirms before it submits to HTCondor or writes to EOS. Each production is
 a directory in the sandbox: `fragment.py` is the generator, `production.json` the

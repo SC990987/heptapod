@@ -58,8 +58,10 @@ Parts that only some analyses need are added on request:
 ## Using this branch
 
 The `framework` and `coffea` bundles are on the `thrust2` branch of the fork
-[SC990987/heptapod](https://github.com/SC990987/heptapod). To run them on your own
-analysis:
+[SC990987/heptapod](https://github.com/SC990987/heptapod), and on its `mcgen` branch
+together with the CMS simulation tools: for those, take `mcgen` in place of `thrust2`
+below and follow [`examples/mcgen/README.md`](../mcgen/README.md). To run them on your
+own analysis:
 
 ### 1. Get the branch
 

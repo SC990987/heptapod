@@ -36,6 +36,33 @@ it is built at the repository's top and committed there.
 
 ---
 
+## The same on HTCondor, with the NanoAOD on EOS
+
+The batch version of the first run: no event is made on the node, the jobs run on the
+LPC's HTCondor and write the NanoAOD to your EOS area. It needs a grid proxy with 12
+hours left (`voms-proxy-init -voms cms -valid 192:00`); put your EOS user name in place
+of `<you>`. The filter's efficiency is known from the runs so far, so the agent goes
+straight to the jobs; for a process of your own it measures it first.
+
+```
+Produce prompt J/psi -> mu+ mu- events for the 2023 run period (not 2023BPix), as
+NanoAOD, without pileup, on HTCondor at the LPC, with the NanoAOD written to EOS in
+root://cmseos.fnal.gov//store/user/<you>/jpsi_mumu_2023/. Generate them with Pythia 8
+(Charmonium:all = on, the J/psi decaying only to mu+ mu-, PhaseSpace:pTHatMin = 8), and
+keep only events with two opposite-sign muons of pT > 5 GeV and |eta| < 2.4, with a
+generator filter. The filter keeps about 2.8% of the generated events (343 of 12400 in
+earlier runs of exactly this setup), and this chain has run end to end before, so run
+no tests here: generate 5000 events in 10 condor jobs of 500, about 140 after the
+filter. Follow the jobs until they are done. Then build an analysis framework on the
+NanoAOD on EOS in a new directory jpsi_analysis, check it, and run its first study
+notebook, so that I can see the dimuon invariant mass and the J/psi peak.
+```
+
+`python scripts/condor_dashboard.py`, from the repository root, shows the jobs as they
+run (`examples/mcgen/README.md`, "Watching batch jobs").
+
+---
+
 ## Produce a sample and analyse it
 
 Produce 20000 events of <process, e.g. prompt J/psi -> mu+ mu-, with both muons of
