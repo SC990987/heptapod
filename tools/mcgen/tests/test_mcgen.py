@@ -167,6 +167,18 @@ def test_fragments_rendered_checked_and_refused():
     assert "defines no `generator`" in _refused(fragments.FragmentError, fragments.check, "x = 1\n")
     assert fragments.needs_lhe(LHE_FRAGMENT) and not fragments.needs_lhe(text)
     assert "not a McM request id" in _refused(fragments.FragmentError, fragments.from_mcm, "nonsense")
+    # McM answers with the fragment as plain text, or as a JSON string; both are read
+    import io
+    original = fragments.urllib.request.urlopen
+    try:
+        for body in (LHE_FRAGMENT, json.dumps(LHE_FRAGMENT)):
+            fragments.urllib.request.urlopen = lambda request, timeout=0, _b=body: io.BytesIO(_b.encode())
+            assert fragments.from_mcm("BPH-Run3Summer23wmLHEGS-00001") == LHE_FRAGMENT
+        fragments.urllib.request.urlopen = lambda request, timeout=0: io.BytesIO(
+            b'{"results": false, "message": "X does not exist"}')
+        assert "does not exist" in _refused(fragments.FragmentError, fragments.from_mcm, "BPH-Run3Summer23GS-00009")
+    finally:
+        fragments.urllib.request.urlopen = original
 
 
 # --------------------------------------------------------------------------- #

@@ -111,12 +111,19 @@ def from_mcm(prepid: str, timeout: int = 60) -> str:
     if not isinstance(prepid, str) or not _PREPID.fullmatch(prepid):
         raise FragmentError(f"{prepid!r} is not a McM request id",
                             "Request ids look like BPH-Run3Summer23GS-00002")
+    request = urllib.request.Request(MCM_FRAGMENT_URL + prepid,
+                                     headers={"Accept": "*/*", "User-Agent": "heptapod-mcgen"})
     try:
-        with urllib.request.urlopen(MCM_FRAGMENT_URL + prepid, timeout=timeout) as reply:
+        with urllib.request.urlopen(request, timeout=timeout) as reply:
             text = reply.read().decode("utf8", "replace")
     except (urllib.error.URLError, OSError) as exc:
         raise FragmentError(f"could not reach McM for {prepid}: {exc}",
                             "Check the network, or give the fragment itself") from None
+    if text.strip().startswith('"'):        # McM can answer with the fragment as a JSON string
+        try:
+            text = json.loads(text.strip())
+        except ValueError:
+            pass
     if text.lstrip().startswith("{"):
         try:
             message = json.loads(text).get("message", text)
