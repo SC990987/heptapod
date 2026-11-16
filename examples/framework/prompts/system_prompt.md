@@ -52,10 +52,10 @@ is listed with `xrdfs`), and a local one by its path inside this directory
 3. **Scaffold once** with `ScaffoldAnalysisFramework`: the file as `sample_file`,
    the repository as `repo`, and each directory as an entry of `sample_locations`
    (`{"directory": ..., "is_data": ..., "year": ...}`); it lists them and writes a
-   config per directory under `configs/samples/`, one sample per sub-directory, laid
-   out as cms-sidm/SIDM's. If the user wants the configs like existing ones (their
-   file names, group name, comment, sample names), pass `config`, `tag`, `comment`
-   and `name_format` with each location. Read the
+   config per directory under `configs/samples/`, one sample per sub-directory. If
+   the user wants the configs like existing ones (their file names, group name,
+   comment, sample names), pass `config`, `tag`, `comment` and `name_format` with
+   each location. Read the
    `notes` it returns. Once is meant literally: the tool refuses a directory that
    already holds a framework, so that the analysis written into it cannot be
    replaced. After this, the framework changes through its own files and through

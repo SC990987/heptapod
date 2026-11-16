@@ -410,46 +410,44 @@ wrapped collection a position stored as `x`, `y`, `z` is available as `vx`, `vy`
 
 ## Add a sample
 
-The samples are spread over files under `PKG/configs/samples/`, one per production as
-cms-sidm/SIDM keeps its ntuple configs (`signal_2mu2e_v10.yaml`, `data.yaml`); their
-layout is in `PKG/configs/samples/README.md`. A list of named files goes into
-`samples.yaml` by hand. The paths are wherever the analysis reads the files from (an
-absolute path, a `root://` URL); the rule that a tool's arguments stay inside the
-working directory is not about them. A directory of samples goes in with the script,
-as SIDM's `add_ntuples.py` does it:
+The samples are spread over files under `PKG/configs/samples/`, one per production
+(`signal.yaml`, `data.yaml`); their layout is in `PKG/configs/samples/README.md`. A
+list of named files goes into `samples.yaml` by hand. The paths are wherever the
+analysis reads the files from (an absolute path, a `root://` URL); the rule that a
+tool's arguments stay inside the working directory is not about them. A directory of
+samples goes in with the script:
 
 ```bash
-# one sample per sub-directory that holds ROOT files, named as SIDM names its signal points
-python -m PKG.scripts.add_samples -o signal_4mu_v10.yaml -t llpNanoAOD_v2 -c "4mu signal samples" \
-    -d root://cmseos.fnal.gov//store/group/lpcmetx/SIDM/ULSignalSamples/2018_v10/BsTo2DpTo4Mu/ \
-    --name-format "4Mu_{MBs}GeV_{MDp}GeV_{ctau}mm" --year 2018
+# one sample per sub-directory that holds ROOT files (ZPrime_M-500_W-5/nano/, ...)
+python -m PKG.scripts.add_samples -o signal.yaml -t nanoaod_v1 -c "ZPrime signal samples" \
+    -d root://cmseos.fnal.gov//store/user/<you>/signal/ \
+    --name-format "ZPrime_M{M}_W{W}" --year 2018
 # the directory itself as one sample: data
-python -m PKG.scripts.add_samples -o data.yaml -t llpNanoAOD_v2 -c "2018 data" \
-    -d /path/to/DoubleMuon --name DoubleMuon_2018C --data --year 2018
+python -m PKG.scripts.add_samples -o data.yaml -t nanoaod_v1 -c "2018 data" \
+    -d /path/to/SingleMuon --name SingleMuon_2018C --data --year 2018
 ```
 
-`-o` is the file, `-t` the group in it (two files may use the same group name, as
-SIDM's do), `-c` the comment written above the group. Each sub-directory becomes a
-sample, with the directory its files are in as the sample's `path`
-(`<sample>/LLPnanoAODv2/`, `<dataset>/<request>/<date>/0000/`); files sitting directly
-in the directory make one sample named after it. This is also what the scaffold's
-`sample_locations` wrote. `--name-format` names the samples from the `KEY-VALUE`
-pieces of their directory names (`MBs-500` gives `{MBs}`, `{dir}` is the whole name);
-without it they are named after the directories without the part all of them share
-(`..._MBs-500_MDp-0p25_ctau-0p4_v3` among its siblings is `MBs-500_MDp-0p25_ctau-0p4`;
-`--keep-names` keeps the whole names). Change one with `--rename OLD=NEW`, or by editing
-its key in the yaml (and in `cross_sections.yaml`). The script says when the files of
+`-o` is the file, `-t` the group in it (two files may use the same group name), `-c`
+the comment written above the group. Each sub-directory becomes a sample, with the
+directory its files are in as the sample's `path` (`ZPrime_M-500_W-5/nano/`,
+`<dataset>/<request>/<date>/0000/`); files sitting directly in the directory make one
+sample named after it. This is also what the scaffold's `sample_locations` wrote.
+`--name-format` names the samples from the `KEY-VALUE` pieces of their directory names
+(`M-500` gives `{M}`, so `ZPrime_M{M}_W{W}` turns `ZPrime_M-500_W-5` into
+`ZPrime_M500_W5`; `{dir}` is the whole name); without it they are named after the
+directories without the part all of them share (`ZPrime_M-500_W-5_TuneCP5_13TeV-madgraph`
+among its siblings is `M-500_W-5`; `--keep-names` keeps the whole names). Change one
+with `--rename OLD=NEW`, or by editing its key in the yaml (and in `cross_sections.yaml`). The script says when the files of
 one sample are in more than one directory (two dates of one CRAB request, two versions
 side by side): that can be the same events twice, so look, and keep one.
 
 The script adds the group at the end of the file and leaves the rest as it is, comments
-included: a file that cannot be read can be commented out (`# - ..._part-7.root`), as
-SIDM does. `--update` replaces a group that exists, in place.
+included: a file that cannot be read can be commented out (`# - nano_7.root`).
+`--update` replaces a group that exists, in place.
 
 A sample without a `year` is in the project's run period, `YEAR` in `PKG/__init__.py`
-(the scaffold's `year`), as SIDM's `make_fileset` takes 2018 for its signal samples; a
-`year` on the group comes first. So data states its year and simulation only another
-one, by the scaffold and by the script alike, and a sample added by hand needs a `year`
+(the scaffold's `year`); a `year` on the group comes first. So data states its year
+and simulation only another one, by the scaffold and by the script alike, and a sample added by hand needs a `year`
 only when it is not `YEAR`.
 
 Every file under `configs/samples/` is searched: `utilities.make_fileset(["A", "B"])`,

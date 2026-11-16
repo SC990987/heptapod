@@ -228,7 +228,7 @@ The object was built and holds nothing. Before reporting that as a result:
 
 An object built from several collections counts twice a particle that is stored in
 two of them: lepton jets clustered from PF and DSA muons, or from an electron and a
-photon that are the same deposit; a sum over leptons of both kinds. In a cms-sidm
+photon that are the same deposit; a sum over leptons of both kinds. In one LLP
 signal file the two leading lepton jets of a 500 GeV resonance came out at 705 GeV
 when DSA muons were a source next to the PF muons, and at 505 GeV without them.
 Count how many objects of one collection have a partner in the other within a small
@@ -320,9 +320,9 @@ dR before combining them, and clean one against the other (`components.md`,
 - A run hangs, with one core busy, in something that uses `part.distinctParent`: the
   file has a generator particle listed as its own mother (seen in skimmed ntuples),
   and coffea follows the chain of mothers without a limit. `part.parent` and
-  `part.children` are not affected. cms-sidm/SIDM replaces coffea's kernel with a
-  capped one for this reason (`sidm/tools/gen.py`); do the same, or stay with
-  `parent`, if the files are not known to be clean.
+  `part.children` are not affected. Replace coffea's kernel with one that stops after
+  a fixed number of steps, or stay with `parent`, if the files are not known to be
+  clean.
 - Using a raw index branch after cuts (`objs["jets"][objs["muons"].jetIdx]`) picks the
   wrong objects: `jetIdx` counts positions in the *original* collection. Use the
   cross-reference attributes (`objs["muons"].matched_jet`), which keep pointing at the

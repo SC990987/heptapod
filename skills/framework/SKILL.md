@@ -71,11 +71,13 @@ show the user the error in full instead of working around it in the definitions.
    directory the user named, `{"directory": ..., "is_data": ..., "year": ...}`, local
    or `root://`; every sub-directory holding ROOT files becomes a sample (give `name`
    when the whole directory is one sample). Each location gets a config file of its
-   own under `configs/samples/`, laid out as cms-sidm/SIDM's ntuple configs. When the
-   user names the files, groups or sample names they want, or shows a config to copy,
-   pass `config` (`"signal_2mu2e_v10.yaml"`), `tag` (`"llpNanoAOD_v2"`), `comment`
-   and `name_format` (`"2Mu2E_{MBs}GeV_{MDp}GeV_{ctau}mm"`: fields are the `KEY-VALUE`
-   pieces of the directory names). Single files go in `samples`. Read the
+   own under `configs/samples/`: a comment, the group with the directory as its path,
+   and one sample per sub-directory with its files and the directory they are in. When
+   the user names the files, groups or sample names they want, or shows a config to
+   copy, pass `config` (`"signal.yaml"`), `tag` (`"nanoaod_v1"`), `comment` and
+   `name_format` (`"ZPrime_M{M}_W{W}"` turns `ZPrime_M-500_W-5` into `ZPrime_M500_W5`:
+   fields are the `KEY-VALUE` pieces of the directory names). Single files go in
+   `samples`. Read the
    `notes` it returns. Once is meant literally: the tool refuses a directory that
    already holds a framework, whatever `overwrite` says, because scaffolding again
    would replace the analysis written into it. From here on the framework changes
@@ -123,11 +125,11 @@ there, where, and what the check shows for it.
 
 What in a scaffolded framework is a placeholder: the pT and |eta| thresholds, the
 `baseline` selection and the two-object channel, the histogram binnings, and any mass
-marked "an assumption" in `objects.py`. The baseline's object cuts are cms-sidm/SIDM's
-lepton-jet source cuts (muons above 5 GeV and electrons above 10 GeV with |eta| < 2.4,
-photons above 20 GeV with |eta| < 2.5): a common starting point, not this analysis's
-choice. What is not: the scaffold never invents a cross section, a luminosity, a
-golden JSON or a trigger path, so a value found in `cross_sections.yaml` or
+marked "an assumption" in `objects.py`. The baseline's object cuts are basic
+placeholder starting cuts (muons above 5 GeV and electrons above 10 GeV with
+|eta| < 2.4, photons above 20 GeV with |eta| < 2.5, jets above 30 GeV with
+|eta| < 2.4), not this analysis's choice. What is not: the scaffold never invents a
+cross section, a luminosity, a golden JSON or a trigger path, so a value found in `cross_sections.yaml` or
 `run_periods.yaml`, or a path in the "pass triggers" cut, was given by someone. `.analysis_framework.json` records what the scaffold was given
 (objects and their collections, tree, trigger paths, sample names) and the components
 added since. Edits made by hand do not update it, and nothing breaks when it lags

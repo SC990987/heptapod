@@ -35,9 +35,6 @@ The generated project does not import HEPTAPOD. It is the user's code from then 
 
 ## Where it goes, where the samples come from, what it starts with
 
-These follow [cms-sidm/SIDM](https://github.com/cms-sidm/SIDM), the framework this
-one was generalised from, wherever SIDM has a convention.
-
 **A git repository** (`repo`). A url (`https://`, `ssh://`, `git@host:owner/name.git`,
 or `file://` inside the working directory) is cloned into the working directory,
 under `project_dir` or the repository's name; a clone already there is used if it is
@@ -61,25 +58,21 @@ A failed call removes the clone it made.
 **Sample locations** (`sample_locations`). Each entry names a directory: a `root://`
 url, listed with `xrdfs <host> ls -R` (the command must be on the PATH; 120 s per
 directory), or a local directory inside the working directory, walked. Each becomes a
-config file of its own under `configs/samples/`, laid out exactly as SIDM's ntuple
-configs: a comment line (`comment`), the group (`tag`, e.g. `llpNanoAOD_v2`; two files
-may share it, as SIDM's do) with the directory as its `path`, and one sample per
-sub-directory holding ROOT files, with its bare file names under `files`, then
-`is_data`, the directory its files are in as its `path` (`<sample>/LLPnanoAODv2/`,
-`<dataset>/<request>/<date>/0000/`), `skim_factor` and `year`. Strings are plain where
-yaml reads them back unchanged, as in SIDM's files. The samples come in SIDM's order,
-numbers compared as numbers with `p` as the decimal point (0p02, 0p2, 2p0, 10p0).
-`config` names the file (default: the directory's name), and `name_format` the samples:
+config file of its own under `configs/samples/`: a comment line (`comment`), the group
+(`tag`, e.g. `nanoaod_v1`; two files may share it) with the directory as its `path`,
+and one sample per sub-directory holding ROOT files, with its bare file names under
+`files`, then `is_data`, the directory its files are in as its `path`
+(`ZPrime_M-500_W-5/nano/`, `<dataset>/<request>/<date>/0000/`), `skim_factor` and
+`year`. Strings are written plain where yaml reads them back unchanged, and quoted
+where it would not. The samples are sorted with the numbers in their names compared as
+numbers, `p` read as the decimal point (0p02, 0p2, 2p0, 10p0). `config` names the file
+(default: the directory's name, e.g. `signal.yaml`), and `name_format` the samples:
 its fields are the `KEY-VALUE` pieces of the directory names, so that
-`2Mu2E_{MBs}GeV_{MDp}GeV_{ctau}mm` gives `CutDecayFalse_SIDM_BsTo2DpTo2Mu2e_MBs-500_MDp-0p25_ctau-0p4_v3`
-SIDM's name, `2Mu2E_500GeV_0p25GeV_0p4mm`. Without it, a sample is named after its
-directory without the part all the directories share (`MBs-500_MDp-0p25_ctau-0p4`; the
-whole name is kept when shortening would clash with another location's samples). Given
-the file lists of the two signal configs of SIDM's 2018 v10 production
-(`signal_2mu2e_v10.yaml`, 90 samples, 4,356 lines, and `signal_4mu_v10.yaml`, 5,234
-lines) with SIDM's `config`, `tag`, `comment` and `name_format`, the scaffold wrote both
-files line for line as SIDM has them, except one stray blank line in each and the
-files SIDM commented out by hand as unreadable, which a listing cannot know about.
+`ZPrime_M{M}_W{W}` turns the directory `ZPrime_M-500_W-5` into the sample
+`ZPrime_M500_W5`. Without it, a sample is named after its directory without the part
+all the directories share (`ZPrime_M-500_W-5_TuneCP5_13TeV-madgraph` among its
+siblings is `M-500_W-5`; the whole name is kept when shortening would clash with
+another location's samples).
 Files sitting directly in the directory make one sample named after it; next to
 sub-directories they are refused as ambiguous. `name` makes the
 whole directory one sample (and allows an `xsec`), `tag` names the group (default:
@@ -89,29 +82,29 @@ than CRAB's numbered blocks (two dates of one request, two versions), is pointed
 in the notes: it can hold the same events twice. The generated
 `scripts/add_samples.py` lists, groups, names and writes a directory in the same way
 (`-c` the comment, `--name-format`, `--keep-names`), adding the group at the end of a
-file and keeping the rest of it, comments included, as SIDM's `add_ntuples.py` does; so
-groups added later look like the first ones. The engine searches every file under
+file and keeping the rest of it, comments included; so groups added later look like
+the first ones. The engine searches every file under
 `configs/samples/` for a sample by name (`utilities.find_samples`); `tag` and
 `location_cfg` choose when a name is used twice. The sample of `sample_file`, when it is one of those listed, comes first in the
 notebooks and in the commands the README shows.
 
-**The starting selection.** The baseline object cuts are SIDM's lepton-jet source
+**The starting selection.** The baseline object cuts are basic placeholder starting
 cuts: muons pT > 5 GeV, electrons pT > 10 GeV, both |eta| < 2.4, photons pT > 20 GeV
-with |eta| < 2.5, DSA muons pT > 10 GeV with |eta| < 2.4. Each object also gets a
-menu of tighter thresholds, `>=1` and `>=2` event cuts, and multiplicity, pT and
-eta-phi histograms, the pT of leptons and photons up to 500 GeV as in SIDM's
-`hists.py`. They are starting values, not recommendations.
+with |eta| < 2.5, jets pT > 30 GeV with |eta| < 2.4, DSA muons pT > 10 GeV with
+|eta| < 2.4. Each object also gets a menu of tighter thresholds, `>=1` and `>=2` event
+cuts, and multiplicity, pT and eta-phi histograms, the pT of leptons and photons up to
+500 GeV. They are starting values, not recommendations.
 
-**The first study.** `studies/obj_basics/basic_histograms.ipynb` is written like
-SIDM's `studies/obj_basics` notebooks: it finds and reloads the package, sets the
-plot style, lists the configured samples, makes a fileset of up to two simulated
-samples (that of `sample_file` first) and one data sample (`max_files=1`), prints the
-cuts of `baseline`, runs the processor (`IterativeExecutor`, `skipbadfiles=True`,
-`metadata_cache={}`), prints the cutflow side by side, and draws a `plot_row` of
-`muon_pt`/`electron_pt` and of `muon_n`/`electron_n` with the samples overlaid and
-normalised, then the muon eta-phi map. Figures go to `output/studies/`. Without muons
-or electrons it plots the first two objects that are counted; with none, it runs the
-`base` collection and leaves the plotting to the analyst.
+**The first study.** `studies/obj_basics/basic_histograms.ipynb` finds and reloads
+the package, sets the plot style, lists the configured samples, makes a fileset of up
+to two simulated samples (that of `sample_file` first) and one data sample
+(`max_files=1`), prints the cuts of `baseline`, runs the processor
+(`IterativeExecutor`, `skipbadfiles=True`, `metadata_cache={}`), prints the cutflow
+side by side, and draws a `plot_row` of `muon_pt`/`electron_pt` and of
+`muon_n`/`electron_n` with the samples overlaid and normalised, then the muon eta-phi
+map. Figures go to `output/studies/`. Without muons or electrons it plots the first
+two objects that are counted; with none, it runs the `base` collection and leaves the
+plotting to the analyst.
 
 ## How the code here is organised
 
@@ -179,15 +172,17 @@ Before a component defines a name (a channel, a histogram, a cut, an object), th
 analyst's files are read to see whether it is taken: python with `ast`, yaml with a
 yaml parser. A block whose marker lines are damaged is not touched.
 
-## Design: what was kept from cms-sidm/SIDM and what changed
+## Design
 
-Kept: the split into an engine (`tools/`), named definitions (`definitions/`) and
-configs that choose among them (`configs/`); cuts and histograms as small functions of
-`objs`; selections and histogram collections assembled with yaml anchors; one
-`channel` axis per histogram; the `Cutflow` accumulator; `test_notebooks/` and
-`studies/`; the metadata sidecar; the dask and LPC scale-out helpers; the chain report.
+The layout was inspired by [cms-sidm/SIDM](https://github.com/cms-sidm/SIDM), the
+framework this one was generalised from. Its parts: the split into an engine
+(`tools/`), named definitions (`definitions/`) and configs that choose among them
+(`configs/`); cuts and histograms as small functions of `objs`; selections and
+histogram collections assembled with yaml anchors; one `channel` axis per histogram;
+the `Cutflow` accumulator; `test_notebooks/` and `studies/`; the metadata sidecar; the
+dask and LPC scale-out helpers; the chain report.
 
-Changed, to make it independent of one analysis:
+What makes it independent of one analysis, and keeps mistakes from passing unnoticed:
 
 - **No lepton jets in the processor.** Objects are either *primary* (read from the
   events) or *derived* (built from the selected objects of a channel, in order, each
@@ -230,11 +225,9 @@ Changed, to make it independent of one analysis:
   session, the metadata a file was first run with. Every Runner here is built with
   `metadata_cache={}`.
 - **Index branches may be stored as floats.** coffea's `local2global` refuses them;
-  `tools/schema.py` wraps it with a conversion (cms-sidm/SIDM replaces the function
-  for the same reason).
-- **A sample without a year is in the project's run period** (`YEAR`), as cms-sidm/SIDM
-  reads its signal samples, which name none, as 2018. The sample configs therefore write
-  a year for data and for simulation of another period only, as SIDM's do.
+  `tools/schema.py` wraps it with a conversion.
+- **A sample without a year is in the project's run period** (`YEAR`). The sample
+  configs therefore write a year for data and for simulation of another period only.
 - **The tree name is a property of the project** (`TREE_NAME`), not a literal
   repeated in every script and notebook.
 
@@ -247,7 +240,7 @@ environments:
 
 | | A: the toolkit's own | B: an existing analysis environment |
 |---|---|---|
-| Set up with | `tb install . --bundle framework --bundle coffea` (toolbase 0.16.0) | CMSSW_17_0_0_pre4's python with the packages of a cms-sidm/SIDM install |
+| Set up with | `tb install . --bundle framework --bundle coffea` (toolbase 0.16.0) | CMSSW_17_0_0_pre4's python with the packages of an existing analysis, installed in its own user base |
 | Python | 3.12.14 | 3.12.4 |
 | coffea, awkward, uproot, hist | 2026.9.0, 2.14.0, 5.7.7, 2.12.0 | 2025.5.0rc2, 2.8.7, 5.7.5, 2.9.0 |
 | numba, fastjet | 0.66.0, 3.5.2.0 | 0.65.1, 3.4.3.1 |
@@ -335,11 +328,11 @@ at c85ef96 (next section):
 
 - building in a git repository (`repo`), cloned and committed, never pushed;
 - sample configs from the directories the samples live in (`sample_locations`), a
-  file per directory laid out and named as cms-sidm/SIDM's, and the same from
-  `scripts/add_samples.py`; the engine reads every file under `configs/samples/`;
-- the baseline lepton cuts of SIDM: the muon baseline went from pT > 10 to 5 GeV and
-  the electron |eta| from 2.5 to 2.4, and the pT histograms of leptons and photons
-  now reach 500 GeV instead of 200. The muons of `tests/synthetic.py` that are meant
+  file per directory, and the same from `scripts/add_samples.py`; the engine reads
+  every file under `configs/samples/`;
+- new placeholder lepton cuts in the baseline: the muon baseline went from pT > 10 to
+  5 GeV and the electron |eta| from 2.5 to 2.4, and the pT histograms of leptons and
+  photons now reach 500 GeV instead of 200. The muons of `tests/synthetic.py` that are meant
   to fail the baseline are now drawn below 4.5 GeV;
 - the first study, `studies/obj_basics/basic_histograms.ipynb`;
 - `InspectFile` and the scaffold's `sample_file` accept a `root://` url (reading one
@@ -351,9 +344,8 @@ bare repository with the real `git` (a url, a local clone, an empty one, a READM
 through a stand-in `xrdfs`; the grouping, the names, the CRAB blocks and the generated
 script's agreement with the tool; the baseline and the notebook's cells. The whole
 request was also made of the tool against a stand-in `xrdfs` answering with the EOS
-layout recorded in SIDM's configs (`2018_v10/BsTo2DpTo2Mu2e/` and the 2018
-`DoubleMuon/`): 90 signal samples and one data sample, 4,886 lines of sample config,
-one commit. The notebook ran from
+layout of an existing production, a directory of 90 signal samples and one of 2018
+data: 4,886 lines of sample config, one commit. The notebook ran from
 top to bottom on the stand-ins for coffea, awkward and hist used for the engine's
 control flow (see below). `tests/test_framework_run.py` has a new test (24 in all)
 that scaffolds from directories of synthetic files and runs every cell of the study
@@ -370,15 +362,17 @@ In environment A, rebuilt with `tb install . --bundle framework --bundle coffea 
 | `tests/test_framework_run.py` (24) | 22 passed, the study's test among them; the dask test skipped (dask was not installed); `test_check_tool_runs_the_generated_checker` failed: a sample added to `samples.yaml` by hand, without a year, came out with none where the test expected 2018 |
 
 The cause: the sample configs used to carry the run period on the group, and a sample
-added by hand inherited it. Written as SIDM writes them, they carried it on every
-sample instead, and the group had none. Changed since, and so far checked only here:
-the project's run period is `YEAR` in the package's `__init__.py` (the scaffold's
-`year`), and a sample without a year takes it, as cms-sidm/SIDM's `make_fileset` takes
-"2018" (`utilities.sample_year`, used by `make_fileset` and the check). Data states its
-year, and simulation only a period that is not `YEAR`, in the scaffold's configs and in
-those of `scripts/add_samples.py`. Rebuilt with `year="2018"` from the file lists of
-SIDM's 2018 v10 2mu2e and 4mu configs, both configs come out as SIDM's, apart from one
-blank line in each and the files SIDM commented out by hand.
+added by hand inherited it. Since c85ef96 they carried it on every sample instead, and
+the group had none. Changed in 7a74fae: the project's run period is `YEAR` in the
+package's `__init__.py` (the scaffold's `year`), and a sample without a year takes it
+(`utilities.sample_year`, used by `make_fileset` and the check). Data states its year,
+and simulation only a period that is not `YEAR`, in the scaffold's configs and in those
+of `scripts/add_samples.py`. Rebuilt with `year="2018"` from the file lists of two
+existing signal configs of that production (90 samples in 4,356 lines, and 5,234
+lines), with their `config`, `tag`, `comment` and `name_format`, both came out line for
+line as the originals, apart from one blank line in each and the files commented out
+there by hand as unreadable, which a listing cannot know about. So far this was checked
+only off the LPC.
 
 ### Checked where the libraries could not be installed
 
@@ -524,7 +518,7 @@ there says something about those cuts before it says anything about the engine. 
 | `InspectFile` or the scaffold cannot read a file | `nanoaod_layout.read_tree_layout`, the only place a file is opened. |
 | A check on a `root://` sample stops with `ImportError: Install fsspec-xrootd to access xrootd storage system` | The environment the check runs with has no XRootD client; the bundle does not install one. Install `fsspec-xrootd` and `xrootd` into it, or point `venv` or `analysis_python` at an environment that has them ("Reading the file" in the skill's `pitfalls.md`). |
 | `test_framework_run.py` fails before any analysis runs | `tests/synthetic.py` (`write_tree`): the file is written with `mktree`. `_project` asserts that `nMuon` is among the branches. |
-| `LLVM IR parsing error: invalid cast opcode for cast from 'i64' to 'ptr'` in anything touching `GenPart.children` | numba 0.67.0 with llvmlite 0.49.0 miscompiles coffea's kernel (found in cms-sidm/SIDM, August 2026). `toolkit.yaml` bounds `numba<0.67` for this reason; check what is installed. |
+| `LLVM IR parsing error: invalid cast opcode for cast from 'i64' to 'ptr'` in anything touching `GenPart.children` | numba 0.67.0 with llvmlite 0.49.0 miscompiles coffea's kernel (found in August 2026). `toolkit.yaml` bounds `numba<0.67` for this reason; check what is installed. |
 | `ValueError: ... conflicting ... coordinate representations` | coffea 2026 validates vector fields on first use. `tools/schema.py` (`_build_collections`) and `utilities.as_lorentz` are where one representation is chosen. |
 | `requires the 'charge' field`, `missing temporal coordinate` | A behaviour was given to a collection that lacks the field: `as_lorentz` picks `PtEtaPhiMCandidate` only when `charge` is present. |
 | An object that exists is reported as "could not be built", or one that is absent is not recognised as absent | `utilities.is_missing_field` recognises absence by awkward's `AttributeError("no field named ...")` (attribute access) and `FieldNotFoundError` (item access); `processor.process` decides from it. |
@@ -544,10 +538,10 @@ there says something about those cuts before it says anything about the engine. 
 Two environments matter and differ: the toolkit's own (what `CheckAnalysisFramework`
 uses unless `analysis_python` or `venv` says otherwise), and whatever environment an
 analysis already lives in. The code is written for coffea 2025.7 and newer and for the
-2025.5 release candidates; cms-sidm/SIDM pins `coffea==2025.5.0rc2`, which has no
-field validation and no `full_like_items`, so the `schema` component's
-`constant_fields` is ignored there with a warning. The bundle's own requirement is
-`coffea>=2025.7.0`, which today resolves to a 2026 release: the two differ in what
+2025.5 release candidates. An environment pinned to `coffea==2025.5.0rc2`, as some
+analyses are, has no field validation and no `full_like_items`, so the `schema`
+component's `constant_fields` is ignored there with a warning. The bundle's own
+requirement is `coffea>=2025.7.0`, which today resolves to a 2026 release: the two differ in what
 they validate, in how `skipbadfiles` decides, and in their dependencies (2026 no
 longer brings dask with it). Do not run `pip install -r requirements.txt` of a
 generated project inside a pinned environment such as that one: it would upgrade

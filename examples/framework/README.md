@@ -29,17 +29,16 @@ lives in `definitions/` (named objects, cuts and histograms, as small python
 functions) and `configs/` (which of them each selection and histogram collection
 uses). Running the analysis is naming selections and histogram collections.
 
-It starts where [cms-sidm/SIDM](https://github.com/cms-sidm/SIDM) starts. Each
-directory of samples becomes a config of its own under `configs/samples/`, written as
-SIDM's ntuple configs are (`signal_2mu2e_v10.yaml`: a comment, the group, the directory
-as its path, one sample per sub-directory with its files and the directory they are
-in), with SIDM's sample names when asked (`2Mu2E_500GeV_0p25GeV_0p4mm`). The baseline
-selection applies SIDM's lepton-jet source cuts (muons above 5 GeV and electrons
-above 10 GeV, |eta| < 2.4). And `studies/obj_basics/basic_histograms.ipynb`, written
-like SIDM's `studies/obj_basics` notebooks, runs the baseline over a file of two
-simulated samples and one data sample and draws the muon and electron pT and
-multiplicity with the samples overlaid. In a git repository the framework is committed once, on the current
-branch, and never pushed: the answer gives the command.
+Each directory of samples becomes a config of its own under `configs/samples/`
+(`signal.yaml`: a comment, the group, the directory as its path, one sample per
+sub-directory with its files and the directory they are in), with the sample names you
+ask for (`ZPrime_M-500_W-5/` becomes `ZPrime_M500_W5` with the name format
+`ZPrime_M{M}_W{W}`). The baseline selection applies basic placeholder cuts (muons above
+5 GeV and electrons above 10 GeV with |eta| < 2.4, photons above 20 GeV, jets above
+30 GeV). And `studies/obj_basics/basic_histograms.ipynb` runs the baseline over a file
+of two simulated samples and one data sample and draws the muon and electron pT and
+multiplicity with the samples overlaid. In a git repository the framework is committed
+once, on the current branch, and never pushed: the answer gives the command.
 
 Extending it is asking for it. Once the framework exists, "I want a histogram of the
 electron pT" or "add a cut on the jets, in a new channel" needs no further tool: the

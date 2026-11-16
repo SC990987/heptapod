@@ -9,16 +9,14 @@ or leave as a marked placeholder.
 
 ## Start in your repository, from where your samples are
 
-Build an analysis framework in my repository `git@github.com:ME/sidm-2mu2e.git`.
-The signal simulation is in
-`root://cmseos.fnal.gov//store/group/lpcmetx/SIDM/ULSignalSamples/2018_v10/BsTo2DpTo2Mu2e/`
-(one directory per mass point) and the 2018 data in
-`root://cmseos.fnal.gov//store/group/lpcmetx/SIDM/Data/2018data/NanoAOD/DoubleMuon/`.
-Write the sample configs as SIDM does: `signal_2mu2e_v10.yaml` and `data.yaml`, both
-under the group `llpNanoAOD_v2`, with the signal points named like
-`2Mu2E_500GeV_0p25GeV_0p4mm` and the data `DoubleMuon_2018C`. Check it on one signal
-sample and on the data, and tell me how to run the basic-histograms study and how to
-push.
+Build an analysis framework in my repository `git@github.com:<you>/zprime-analysis.git`.
+The signal simulation is in `root://cmseos.fnal.gov//store/user/<you>/signal/`, one
+directory per mass point (`ZPrime_M-500_W-5/nano/`, ...), and the 2018 data in
+`root://cmseos.fnal.gov//store/user/<you>/data/SingleMuon/`. Write the sample configs
+as `signal.yaml` and `data.yaml`, both under the group `nanoaod_v1`, with the signal
+points named like `ZPrime_M500_W5` and the data `SingleMuon_2018C`. Check it on one
+signal sample and on the data, and tell me how to run the basic-histograms study and
+how to push.
 
 ## Start a framework
 

@@ -69,17 +69,17 @@ baseline:
 include other lists by anchor.
 
 `samples/*.yaml`: `{tag: {path, samples: {name: {files, is_data, path, skim_factor, year}}}}`,
-one file per production, as cms-sidm/SIDM keeps its ntuple configs (`signal_2mu2e_v10.yaml`,
-`data.yaml`; `samples/README.md` shows one). A tag names a group of samples; a file may
-hold several groups, and two files may use the same tag. A group listed from a directory
-has that directory as its `path` (`root://cmseos.fnal.gov//store/.../BsTo2DpTo2Mu2e/`),
-each sample the directory its files are in below it (`<sample>/LLPnanoAODv2/`), and
-`files` the names under that. A file's location is the three joined; a complete path or
-url in `files` is used as it is. Every file is searched for a sample by name
+one file per production (`signal.yaml`, `data.yaml`; `samples/README.md` shows one). A
+tag names a group of samples; a file may hold several groups, and two files may use the
+same tag. A group listed from a directory has that directory as its `path`
+(`root://cmseos.fnal.gov//store/user/<you>/signal/`), each sample the directory its
+files are in below it (`ZPrime_M-500_W-5/nano/`), and `files` the names under that. A
+file's location is the three joined; a complete path or url in `files` is used as it
+is. Every file is searched for a sample by name
 (`utilities.find_samples()` lists them all); `tag` and `location_cfg` choose when a name
 is used twice. A sample without a `year` takes its group's, or else `YEAR` of
-`PKG/__init__.py` (`utilities.sample_year`), as SIDM takes 2018: data states its year,
-simulation only another one.
+`PKG/__init__.py` (`utilities.sample_year`): data states its year, simulation only
+another one.
 `cross_sections.yaml`: `{sample name: pb}`. `run_periods.yaml`: `{year: {lumi: /pb, golden_json: file in data/}}`.
 
 Every config is a mapping of names to values, and the names are read as text: a run
@@ -98,11 +98,11 @@ cannot be run.
 samples through every channel, the cutflows, a histogram and the warnings. Re-run it
 after changing the engine.
 
-`PKG/studies/obj_basics/basic_histograms.ipynb` is the first study, built like the
-studies of cms-sidm/SIDM (`studies/obj_basics/`): it finds the package from its own
-directory, reloads the analysis modules, sets the experiment's plot style, lists the
-configured samples, builds a fileset of two simulated samples (the one the framework
-was matched to first) and a data sample (one file each, `max_files=1`), prints the cuts `baseline` applies, runs the processor with the
+`PKG/studies/obj_basics/basic_histograms.ipynb` is the first study: it finds the
+package from its own directory, reloads the analysis modules, sets the experiment's
+plot style, lists the configured samples, builds a fileset of two simulated samples
+(the one the framework was matched to first) and a data sample (one file each,
+`max_files=1`), prints the cuts `baseline` applies, runs the processor with the
 `<object>_base` collections of the muons and electrons, prints the cutflow side by
 side, and draws `plot_row` panels of `muon_pt`/`electron_pt` and `muon_n`/`electron_n`
 with the samples overlaid and normalised to unit area, then the muons' eta-phi map.
