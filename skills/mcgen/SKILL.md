@@ -61,7 +61,8 @@ the process is whatever the generator settings say.
 6. **Follow it.** `MCProductionStatus` until `complete`. A failed job reports the
    step, the error and the end of its log. Fix the cause, then run just the failed
    jobs again (`jobs=[...]`). A held condor job usually means the proxy expired or a
-   job ran out of memory.
+   job ran out of memory. The user can watch batch jobs too: the HEPTAPOD
+   repository's `scripts/condor_dashboard.py` shows them live in a browser.
 7. **Build the framework on it**, when the user wants to analyse the sample (with the
    `framework` skill): `ScaffoldAnalysisFramework` with the `sample_file`,
    `sample_locations` and `year` of `for_framework` (and the user's `repo` if they
