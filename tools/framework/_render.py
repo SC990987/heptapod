@@ -379,11 +379,13 @@ def build_plan(specs: List[Dict[str, Any]], triggers: Optional[List[str]] = None
         if example["collection"] in PAIR_MASS_COLLECTIONS or example.get("wrap"):
             hist_name = f"{stem}_{stem}_invmass"
             label = f"Invariant mass of the two leading {name} (GeV)"
+            # log-spaced from 0.2 GeV to 1 TeV, so that any resonance of the pair shows
+            # as a peak, from the J/psi to the Z and beyond
             hists.append((hist_name, (
                 "h.Histogram(\n"
                 "        [\n"
-                f"            h.Axis(hist.axis.Regular(*default_binnings[\"mass\"], name={q(hist_name)},\n"
-                f"                                     label={q(label)}),\n"
+                f"            h.Axis(hist.axis.Regular(300, 0.2, 1000., transform=hist.axis.transform.log,\n"
+                f"                                     name={q(hist_name)}, label={q(label)}),\n"
                 f"                   lambda objs, mask: objs[{q(name)}][mask, :2].sum().mass),\n"
                 "        ],\n"
                 f"        evt_mask=lambda objs: ak.num(objs[{q(name)}], axis=1) > 1,\n"
@@ -1058,6 +1060,20 @@ def study_objects(plan: Dict[str, Any]) -> List[str]:
     return chosen or [s["name"] for s in usable[:2]]
 
 
+def study_pair_mass(plan: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """The pair-mass histogram the first study draws: that of the plan's example object,
+    when the study plots that object (so that its collection is filled), else None."""
+    if not plan.get("example"):
+        return None
+    stem = singular(plan["example"])
+    hist_name = f"{stem}_{stem}_invmass"
+    if hist_name not in [name for name, _ in plan["hists"]]:
+        return None
+    if stem not in [singular(name) for name in study_objects(plan)]:
+        return None
+    return {"object": plan["example"], "hist": hist_name}
+
+
 def render_study_notebook(package: str, title: str, plan: Dict[str, Any],
                           simulated: List[str], data: List[str]) -> str:
     """A first study, studies/obj_basics: process a file of up to two simulated samples
@@ -1183,7 +1199,9 @@ print("\\n".join(utilities.cutflow_table(out, "baseline", samples=read, weighted
 ## Basic histograms
 
 `plot_row` draws one panel per histogram with every sample overlaid, each normalised to
-unit area so that simulation and data compare in shape. The figures are also saved in
+unit area so that simulation and data compare in shape. Where the framework has the
+invariant mass of a pair, it is drawn too, on a logarithmic axis from 0.2 GeV to 1 TeV
+on which any resonance of the pair shows as a peak. The figures are also saved in
 `output/studies/` at the top of the repository (git ignores `output/`).
 """),
         _cell("code", """
@@ -1219,6 +1237,16 @@ plotting.plot(utilities.get_hist(out, read[0], {q(stems[0] + "_eta_phi")}, "base
 plt.savefig(os.path.join(figures, {q(stems[0] + "_eta_phi.png")}))
 """),
         ]
+        pair = study_pair_mass(plan)
+        if pair:
+            cells.append(_cell("code", f"""
+# the invariant mass of the two leading {pair["object"]}, on a logarithmic axis: a resonance
+# of the pair shows as a peak wherever it is (J/psi, Upsilon, Z, ...)
+fig, ax = plt.subplots(figsize=(12, 10))
+plotting.plot_samples(out, {q(pair["hist"])}, "baseline", samples=read, density=True)
+ax.set_xscale("log")
+fig.savefig(os.path.join(figures, {q(pair["hist"] + ".png")}))
+"""))
     else:
         cells.append(_cell("markdown", """
 The framework has no object with a multiplicity and a pT histogram yet. Name the

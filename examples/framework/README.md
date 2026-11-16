@@ -37,7 +37,7 @@ ask for (`ZPrime_M-500_W-5/` becomes `ZPrime_M500_W5` with the name format
 5 GeV and electrons above 10 GeV with |eta| < 2.4, photons above 20 GeV, jets above
 30 GeV). And `studies/obj_basics/basic_histograms.ipynb` runs the baseline over a file
 of two simulated samples and one data sample and draws the muon and electron pT and
-multiplicity with the samples overlaid. In a git repository the framework is committed
+multiplicity with the samples overlaid, and the dimuon mass on a logarithmic axis. In a git repository the framework is committed
 once, on the current branch, and never pushed: the answer gives the command.
 
 Extending it is asking for it. Once the framework exists, "I want a histogram of the

@@ -10,5 +10,5 @@ object, add it to `analysis_pkg/definitions/` so the next study can use it too.
 `obj_basics/basic_histograms.ipynb` is the first, written with the framework: it runs
 the `baseline` channel over a file of two simulated samples and one data sample, prints
 the cuts and the cutflow, and draws the pT and multiplicity of the muons and electrons
-(of the first two objects, without them) with the samples overlaid. Copy it to start a
-new study; its figures go to `output/studies/` at the top of the repository.
+(of the first two objects, without them) with the samples overlaid, and the invariant
+mass of the leading pair on a logarithmic axis. Copy it to start a new study; its figures go to `output/studies/` at the top of the repository.

@@ -360,6 +360,12 @@ def test_the_baseline_and_the_first_study():
         assert 'hist_collections = ["muon_base", "electron_base"]' in code
         assert {"muon_base", "electron_base"} <= set(collections)
         assert "plot_row" in code and "plotting.plot_samples" in code and "build_cuts" in code
+        # the invariant mass of the two leading muons, log-binned from 0.2 GeV to 1 TeV and
+        # drawn on a logarithmic axis, so that any dimuon resonance shows as a peak
+        assert 'plotting.plot_samples(out, "muon_muon_invmass", "baseline"' in code
+        assert 'ax.set_xscale("log")' in code and "muon_muon_invmass.png" in code
+        assert "hist.axis.Regular(300, 0.2, 1000., transform=hist.axis.transform.log" in hists
+        assert "muon_muon_invmass" in collections["muon_base"]
     # without samples, and without muons or electrons, it still says what to fill in
     with tempfile.TemporaryDirectory() as tmp:
         result = _create(tmp, objects={"jets": "Jet"}, include_default_objects=False)
@@ -372,6 +378,7 @@ def test_the_baseline_and_the_first_study():
         notebook = json.loads((Path(tmp) / "demo_analysis" / result["layout"]["study"]).read_text())
         code = "\n".join("".join(c["source"]) for c in notebook["cells"] if c["cell_type"] == "code")
         assert 'hist_collections = ["base"]' in code and "fig = plot_row(" not in code
+        assert "set_xscale" not in code              # no pair to draw the mass of
         assert "base" in yaml.safe_load((Path(tmp) / "demo_analysis" / result["package"] /
                                          "configs/hist_collections.yaml").read_text())
         compile(code.replace("%matplotlib inline", ""), "study", "exec")
