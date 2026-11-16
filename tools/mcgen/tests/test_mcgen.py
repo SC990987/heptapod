@@ -396,6 +396,34 @@ def test_condor_jobs_are_read_from_the_job_log():
                                       "HTCondor's job log, condor/logs/condor.log, is missing")
 
 
+def test_the_job_summary_keeps_the_generator_numbers_once():
+    """run_job.sh's summary of a step: TrigReport's and GenXSecAnalyzer's lines, once each."""
+    start = production.RUN_JOB.index('    grep -h -E "^TrigReport')
+    pipeline = production.RUN_JOB[start:production.RUN_JOB.index('\n', production.RUN_JOB.index('>> "$SUMMARY"', start))]
+    block = ("------------------------------------\nGenXsecAnalyzer:\n------------------------------------\n"
+             "Before Filter: total cross section = 3.095e+06 +- 6.412e+04 pb\n"
+             "Filter efficiency (taking into account weights)= (98) / (700) = 1.400e-01 +- 1.311e-02\n"
+             "Filter efficiency (event-level)= (98) / (700) = 1.400e-01 +- 1.311e-02    [TO BE USED IN MCM]\n"
+             "\nAfter filter: final cross section = 4.333e+05 +- 4.157e+04 pb\n"
+             "After filter: final fraction of events with negative weights = 0.000e+00 +- 0.000e+00\n")
+    log = (" 1/0 extra term in cross section, density matrix on/off\n"
+           "TrigReport Events total = 700 passed = 98 failed = 602\n" + block + block)
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "GEN-SIM.log").write_text(log)
+        env = dict(os.environ, WORK=tmp, name="GEN-SIM", SUMMARY=str(Path(tmp) / "summary.txt"))
+        subprocess.run(["bash", "-c", pipeline], env=env, check=True)
+        lines = (Path(tmp) / "summary.txt").read_text().splitlines()
+    assert lines == [
+        "GEN-SIM: TrigReport Events total = 700 passed = 98 failed = 602",
+        "GEN-SIM: Before Filter: total cross section = 3.095e+06 +- 6.412e+04 pb",
+        "GEN-SIM: Filter efficiency (taking into account weights)= (98) / (700) = 1.400e-01 +- 1.311e-02",
+        "GEN-SIM: Filter efficiency (event-level)= (98) / (700) = 1.400e-01 +- 1.311e-02    [TO BE USED IN MCM]",
+        "GEN-SIM: After filter: final cross section = 4.333e+05 +- 4.157e+04 pb"], lines
+    numbers = jobs.generator_numbers([jobs._summary("\n".join(lines))])
+    assert numbers["generated"] == 700 and numbers["passed_filter"] == 98
+    assert numbers["cross_section_pb"] == 4.333e5
+
+
 # --------------------------------------------------------------------------- #
 # the tools
 # --------------------------------------------------------------------------- #

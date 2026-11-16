@@ -261,8 +261,10 @@ for entry in "${MCGEN_STEPS[@]}"; do
            MCGEN_STEP=$index MCGEN_SEED=$MCGEN_SEED MCGEN_THREADS=$MCGEN_THREADS \
            cmsRun "$PROD/bin/wrap_cfg.py") > "$WORK/$name.log" 2>&1
     code=$?
-    grep -h -E "^TrigReport Events total|cross section|Filter efficiency" "$WORK/$name.log" \
-        | sed "s/^/$name: /" >> "$SUMMARY"
+    # TrigReport's event counts and GenXSecAnalyzer's numbers, once each (the log can
+    # hold GenXSecAnalyzer's printout twice)
+    grep -h -E "^TrigReport Events total|^(Before|After) (Filter|matching): total cross section|^Matching efficiency|^(HepMC f|F)ilter efficiency|^After filter: final cross section" "$WORK/$name.log" \
+        | awk '!seen[$0]++' | sed "s/^/$name: /" >> "$SUMMARY"
     if [ $code -ne 0 ] || [ ! -s "$WORK/$output" ]; then
         tail -40 "$WORK/$name.log" | sed "s/^/$name log: /" >> "$SUMMARY"
         fail "$name: cmsRun exited with $code"
